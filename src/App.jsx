@@ -7,6 +7,7 @@ import CustomerDetail from './pages/CustomerDetail.jsx';
 import AddEditCustomer from './pages/AddEditCustomer.jsx';
 import Appointments from './pages/Appointments.jsx';
 import AddEditAppointment from './pages/AddEditAppointment.jsx';
+import Tilbud from './pages/Tilbud.jsx';
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="/aftaler" element={<Appointments />} />
             <Route path="/aftaler/ny" element={<AddEditAppointment />} />
             <Route path="/aftaler/:id/rediger" element={<AddEditAppointment />} />
+            <Route path="/tilbud" element={<Tilbud />} />
           </Routes>
         </div>
         <BottomNav />
