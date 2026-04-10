@@ -31,6 +31,15 @@ export function getDayKey(appointmentId, date) {
   return `${appointmentId}_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+const CUSTOM_EQUIPMENT_KEY = 'kundeapp_custom_equipment';
+export function getCustomEquipment() {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_EQUIPMENT_KEY) || '[]'); }
+  catch { return []; }
+}
+export function saveCustomEquipment(items) {
+  localStorage.setItem(CUSTOM_EQUIPMENT_KEY, JSON.stringify(items));
+}
+
 export const RECURRENCE_LABELS = {
   none:     'Ingen gentagelse',
   daily:    'Daglig',

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration, EQUIPMENT_LIST } from '../storage.js';
+import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration, EQUIPMENT_LIST, getCustomEquipment, saveCustomEquipment } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 import CalendarPicker from '../components/CalendarPicker.jsx';
 
@@ -34,6 +34,8 @@ export default function AddEditAppointment() {
   const [recurrenceInterval, setRecurrenceInterval] = useState('2'); // antal uger ved 'custom'
   const [price, setPrice] = useState('');
   const [equipment, setEquipment] = useState([]);
+  const [customEquipment, setCustomEquipment] = useState(() => getCustomEquipment());
+  const [newEquipItem, setNewEquipItem] = useState('');
 
   const tomorrow = new Date(Date.now() + 86400000);
   tomorrow.setHours(0, 0, 0, 0);
@@ -199,20 +201,78 @@ export default function AddEditAppointment() {
 
         {/* Redskaber */}
         <label style={lbl}>Redskaber</label>
-        <div style={{ background: '#fff', borderRadius: 12, padding: '10px 12px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {EQUIPMENT_LIST.map(item => {
-            const sel = equipment.includes(item);
-            return (
-              <button key={item} onClick={() => setEquipment(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item])} style={{
-                borderRadius: 20, padding: '7px 12px', fontSize: 13, fontWeight: 600, border: '2px solid',
-                borderColor: sel ? '#2563EB' : '#E5E7EB',
-                background: sel ? '#EFF6FF' : '#F9FAFB',
-                color: sel ? '#2563EB' : '#6B7280',
-              }}>
-                {item}
-              </button>
-            );
-          })}
+        <div style={{ background: '#fff', borderRadius: 12, padding: '10px 12px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginBottom: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: customEquipment.length > 0 ? 10 : 0 }}>
+            {EQUIPMENT_LIST.map(item => {
+              const sel = equipment.includes(item);
+              return (
+                <button key={item} onClick={() => setEquipment(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item])} style={{
+                  borderRadius: 20, padding: '7px 12px', fontSize: 13, fontWeight: 600, border: '2px solid',
+                  borderColor: sel ? '#2563EB' : '#E5E7EB',
+                  background: sel ? '#EFF6FF' : '#F9FAFB',
+                  color: sel ? '#2563EB' : '#6B7280',
+                }}>
+                  {item}
+                </button>
+              );
+            })}
+          </div>
+          {customEquipment.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, paddingTop: 8, borderTop: '1px solid #F3F4F6', marginBottom: 8 }}>
+              {customEquipment.map(item => {
+                const sel = equipment.includes(item);
+                return (
+                  <div key={item} style={{ display: 'flex', alignItems: 'center', borderRadius: 20, border: `2px solid ${sel ? '#2563EB' : '#E5E7EB'}`, background: sel ? '#EFF6FF' : '#F9FAFB', overflow: 'hidden' }}>
+                    <button onClick={() => setEquipment(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item])}
+                      style={{ padding: '7px 10px', fontSize: 13, fontWeight: 600, color: sel ? '#2563EB' : '#6B7280' }}>
+                      {item}
+                    </button>
+                    <button onClick={() => {
+                      const next = customEquipment.filter(i => i !== item);
+                      saveCustomEquipment(next);
+                      setCustomEquipment(next);
+                      setEquipment(prev => prev.filter(i => i !== item));
+                    }} style={{ padding: '7px 8px 7px 0', fontSize: 13, color: '#EF4444', lineHeight: 1 }}>✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, paddingTop: 8, borderTop: '1px solid #F3F4F6' }}>
+            <input
+              style={{ flex: 1, fontSize: 14, borderBottom: '2px solid #E5E7EB', paddingBottom: 4, color: '#111827' }}
+              value={newEquipItem}
+              onChange={e => setNewEquipItem(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  const item = newEquipItem.trim();
+                  if (item && ![...EQUIPMENT_LIST, ...customEquipment].includes(item)) {
+                    const next = [...customEquipment, item];
+                    saveCustomEquipment(next);
+                    setCustomEquipment(next);
+                    setEquipment(prev => [...prev, item]);
+                    setNewEquipItem('');
+                  }
+                }
+              }}
+              placeholder="Tilføj nyt redskab..."
+            />
+            <button onClick={() => {
+              const item = newEquipItem.trim();
+              if (item && ![...EQUIPMENT_LIST, ...customEquipment].includes(item)) {
+                const next = [...customEquipment, item];
+                saveCustomEquipment(next);
+                setCustomEquipment(next);
+                setEquipment(prev => [...prev, item]);
+                setNewEquipItem('');
+              }
+            }} style={{ color: '#2563EB', fontWeight: 700, fontSize: 14, flexShrink: 0, padding: '0 4px' }}>
+              + Tilføj
+            </button>
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 14, paddingLeft: 4 }}>
+          Tryk ✕ på et brugerdefineret redskab for at slette det permanent
         </div>
 
         {/* Gentagelse */}

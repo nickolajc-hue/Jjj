@@ -22,6 +22,8 @@ const s = {
   pb: { paddingBottom: 20 },
 };
 
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','Maj','Jun','Jul','Aug','Sep','Okt','Nov','Dec'];
+
 function formatKr(amount) {
   return amount.toLocaleString('da-DK', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' kr';
 }
@@ -29,41 +31,98 @@ function formatShortDate(d) {
   return new Date(d).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
+function IncomeChart({ appointments }) {
+  const now = new Date();
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return {
+      label: MONTH_SHORT[d.getMonth()],
+      shortYear: i > 0 && d.getMonth() === 0 ? String(d.getFullYear()).slice(2) : null,
+      income: calcExpectedIncome(appointments, d, end),
+      isCurrent: i === 0,
+    };
+  });
+
+  const maxIncome = Math.max(...months.map(m => m.income), 1);
+  const hasAny = months.some(m => m.income > 0);
+
+  if (!hasAny) {
+    return (
+      <div style={{ textAlign: 'center', padding: '12px 0 4px', color: '#9CA3AF', fontSize: 12, fontStyle: 'italic' }}>
+        Tilføj priser til dine aftaler for at se grafen
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 150, paddingTop: 8 }}>
+      {months.map((m, i) => {
+        const barPct = m.income > 0 ? Math.max((m.income / maxIncome) * 90, 5) : 0;
+        return (
+          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+            {/* Beløb over søjlen */}
+            <div style={{ fontSize: 8, fontWeight: 700, color: m.isCurrent ? '#2563EB' : '#6B7280', marginBottom: 2, textAlign: 'center', lineHeight: 1.2, minHeight: 12 }}>
+              {m.income >= 1000
+                ? `${(m.income / 1000 % 1 === 0 ? m.income / 1000 : (m.income / 1000).toFixed(1))}k`
+                : m.income > 0 ? m.income : ''}
+            </div>
+            {/* Søjle */}
+            <div style={{
+              width: '100%',
+              height: m.income > 0 ? `${barPct}%` : 2,
+              background: m.isCurrent ? '#2563EB' : m.income > 0 ? '#93C5FD' : '#F3F4F6',
+              borderRadius: '4px 4px 0 0',
+              transition: 'height 0.3s ease',
+            }} />
+            {/* Måneds-label */}
+            <div style={{ fontSize: 9, fontWeight: m.isCurrent ? 800 : 400, color: m.isCurrent ? '#2563EB' : '#9CA3AF', marginTop: 4, textAlign: 'center', lineHeight: 1.2 }}>
+              {m.label}
+              {m.shortYear && <div style={{ fontSize: 8, color: '#C4C4C4' }}>{m.shortYear}</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [counts, setCounts] = useState({ customers: 0, upcoming: 0, today: 0 });
   const [income, setIncome] = useState({ monthly: 0, yearly: 0 });
+  const [appointments, setAppointments] = useState([]);
   const [nextAppts, setNextAppts] = useState([]);
 
   useEffect(() => {
     const customers = getCustomers();
-    const appointments = getAppointments();
+    const appts = getAppointments();
     const customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayEnd = new Date(todayStart.getTime() + 86400000);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const yearStart = new Date(now.getFullYear(), 0, 1);
     const yearEnd = new Date(now.getFullYear() + 1, 0, 1);
 
-    const todayCount = appointments.filter(a => occursOnDate(a, todayStart)).length;
-    const upcomingCount = appointments.filter(a => {
-      const d = new Date(a.date); d.setHours(0,0,0,0);
+    const todayCount = appts.filter(a => occursOnDate(a, todayStart)).length;
+    const upcomingCount = appts.filter(a => {
+      const d = new Date(a.date); d.setHours(0, 0, 0, 0);
       return d >= todayStart;
     }).length;
 
-    const enriched = appointments.map(a => ({ ...a, customerName: customerMap[a.customerId] || 'Ukendt' }));
+    const enriched = appts.map(a => ({ ...a, customerName: customerMap[a.customerId] || 'Ukendt' }));
     const upcoming = enriched
-      .filter(a => { const d = new Date(a.date); d.setHours(0,0,0,0); return d >= todayStart; })
+      .filter(a => { const d = new Date(a.date); d.setHours(0, 0, 0, 0); return d >= todayStart; })
       .sort((a, b) => new Date(a.date) - new Date(b.date));
 
     setCounts({ customers: customers.length, upcoming: upcomingCount, today: todayCount });
     setIncome({
-      monthly: calcExpectedIncome(appointments, monthStart, monthEnd),
-      yearly: calcExpectedIncome(appointments, yearStart, yearEnd),
+      monthly: calcExpectedIncome(appts, monthStart, monthEnd),
+      yearly: calcExpectedIncome(appts, yearStart, yearEnd),
     });
+    setAppointments(appts);
     setNextAppts(upcoming.slice(0, 5));
   }, []);
 
@@ -94,9 +153,9 @@ export default function Dashboard() {
       </div>
 
       {/* Indkomst */}
-      <div style={{ ...s.section }}>
+      <div style={s.section}>
         <div style={s.sectionTitle}>💰 Forventet indkomst</div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
           <div style={{ flex: 1, background: '#F0FDF4', borderRadius: 12, padding: '14px 12px', textAlign: 'center' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
               Denne måned
@@ -114,11 +173,13 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-        {income.monthly === 0 && income.yearly === 0 && (
-          <div style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic', marginTop: 10, textAlign: 'center' }}>
-            Tilføj priser til dine aftaler for at se forventet indkomst
+        {/* Graf: næste 12 måneder */}
+        <div style={{ borderTop: '1px solid #F3F4F6', paddingTop: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+            Næste 12 måneder
           </div>
-        )}
+          <IncomeChart appointments={appointments} />
+        </div>
       </div>
 
       {/* Næste aftaler */}
