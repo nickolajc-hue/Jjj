@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getCustomers, getAppointments } from '../storage.js';
+import { getCustomers, getAppointments, occursOnDate, calcExpectedIncome } from '../storage.js';
 
 const s = {
   header: { background: '#2563EB', color: '#fff', padding: '24px 20px 48px', paddingTop: 'calc(24px + env(safe-area-inset-top))' },
@@ -22,33 +22,48 @@ const s = {
   pb: { paddingBottom: 20 },
 };
 
-function formatTime(iso) {
-  return new Date(iso).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+function formatKr(amount) {
+  return amount.toLocaleString('da-DK', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' kr';
 }
-function formatShortDate(iso) {
-  return new Date(iso).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' });
+function formatShortDate(d) {
+  return new Date(d).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [counts, setCounts] = useState({ customers: 0, upcoming: 0, today: 0 });
-  const [todayAppts, setTodayAppts] = useState([]);
+  const [income, setIncome] = useState({ monthly: 0, yearly: 0 });
   const [nextAppts, setNextAppts] = useState([]);
 
   useEffect(() => {
     const customers = getCustomers();
     const appointments = getAppointments();
     const customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
+
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayEnd = new Date(todayStart.getTime() + 86400000);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const yearEnd = new Date(now.getFullYear() + 1, 0, 1);
+
+    const todayCount = appointments.filter(a => occursOnDate(a, todayStart)).length;
+    const upcomingCount = appointments.filter(a => {
+      const d = new Date(a.date); d.setHours(0,0,0,0);
+      return d >= todayStart;
+    }).length;
 
     const enriched = appointments.map(a => ({ ...a, customerName: customerMap[a.customerId] || 'Ukendt' }));
-    const today = enriched.filter(a => { const d = new Date(a.date); return d >= todayStart && d < todayEnd; }).sort((a, b) => new Date(a.date) - new Date(b.date));
-    const upcoming = enriched.filter(a => new Date(a.date) >= now).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const upcoming = enriched
+      .filter(a => { const d = new Date(a.date); d.setHours(0,0,0,0); return d >= todayStart; })
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    setCounts({ customers: customers.length, upcoming: upcoming.length, today: today.length });
-    setTodayAppts(today);
+    setCounts({ customers: customers.length, upcoming: upcomingCount, today: todayCount });
+    setIncome({
+      monthly: calcExpectedIncome(appointments, monthStart, monthEnd),
+      yearly: calcExpectedIncome(appointments, yearStart, yearEnd),
+    });
     setNextAppts(upcoming.slice(0, 5));
   }, []);
 
@@ -59,39 +74,54 @@ export default function Dashboard() {
         <div style={s.sub}>Her er dit overblik</div>
       </div>
 
+      {/* Tællerstatistik */}
       <div style={s.statsRow}>
         <div style={{ ...s.stat, background: '#EFF6FF' }} onClick={() => navigate('/kunder')}>
-          <span style={{ fontSize: 24 }}>👥</span>
+          <span style={{ fontSize: 22 }}>👥</span>
           <span style={{ ...s.statNum, color: '#2563EB' }}>{counts.customers}</span>
           <span style={s.statLabel}>Kunder</span>
         </div>
         <div style={{ ...s.stat, background: '#F0FDF4' }} onClick={() => navigate('/aftaler')}>
-          <span style={{ fontSize: 24 }}>📅</span>
+          <span style={{ fontSize: 22 }}>📅</span>
           <span style={{ ...s.statNum, color: '#10B981' }}>{counts.upcoming}</span>
           <span style={s.statLabel}>Kommende</span>
         </div>
-        <div style={{ ...s.stat, background: '#FFF7ED' }} onClick={() => navigate('/aftaler')}>
-          <span style={{ fontSize: 24 }}>⏰</span>
+        <div style={{ ...s.stat, background: '#FFF7ED' }} onClick={() => navigate('/min-dag')}>
+          <span style={{ fontSize: 22 }}>⏰</span>
           <span style={{ ...s.statNum, color: '#F59E0B' }}>{counts.today}</span>
           <span style={s.statLabel}>I dag</span>
         </div>
       </div>
 
-      {todayAppts.length > 0 && (
-        <div style={s.section}>
-          <div style={s.sectionTitle}>I dag</div>
-          {todayAppts.map(a => (
-            <div key={a.id} style={{ ...s.apptCard, borderLeftColor: '#F59E0B' }}>
-              <div style={s.apptTime}>{formatTime(a.date)}</div>
-              <div>
-                <div style={s.apptTitle}>{a.title}</div>
-                <div style={s.apptCustomer}>{a.customerName}</div>
-              </div>
+      {/* Indkomst */}
+      <div style={{ ...s.section }}>
+        <div style={s.sectionTitle}>💰 Forventet indkomst</div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ flex: 1, background: '#F0FDF4', borderRadius: 12, padding: '14px 12px', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+              Denne måned
             </div>
-          ))}
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#10B981' }}>
+              {formatKr(income.monthly)}
+            </div>
+          </div>
+          <div style={{ flex: 1, background: '#EFF6FF', borderRadius: 12, padding: '14px 12px', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+              Dette år
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#2563EB' }}>
+              {formatKr(income.yearly)}
+            </div>
+          </div>
         </div>
-      )}
+        {income.monthly === 0 && income.yearly === 0 && (
+          <div style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic', marginTop: 10, textAlign: 'center' }}>
+            Tilføj priser til dine aftaler for at se forventet indkomst
+          </div>
+        )}
+      </div>
 
+      {/* Næste aftaler */}
       {nextAppts.length > 0 && (
         <div style={s.section}>
           <div style={s.sectionTitle}>Næste aftaler</div>
@@ -102,12 +132,17 @@ export default function Dashboard() {
                 <div style={s.apptTitle}>{a.title}</div>
                 <div style={s.apptCustomer}>{a.customerName}</div>
               </div>
-              <div style={{ fontSize: 12, color: '#9CA3AF', marginRight: 8 }}>{formatTime(a.date)}</div>
+              {a.price > 0 && (
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#10B981', marginRight: 8 }}>
+                  {a.price.toLocaleString('da-DK')} kr
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
 
+      {/* Hurtige handlinger */}
       <div style={s.section}>
         <div style={s.sectionTitle}>Hurtige handlinger</div>
         <div style={s.actionsRow}>

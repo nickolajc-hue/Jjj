@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { getAppointments, getCustomers, occursOnDate, formatDuration, formatRecurrence, getDayRecords, saveDayRecords, getDayKey } from '../storage.js';
+import CalendarPicker from '../components/CalendarPicker.jsx';
 
 const HOME_KEY = 'kundeapp_home_address';
+const STARTTIME_KEY = 'kundeapp_start_time';
 const DEFAULT_HOME = 'Æblerosevej 8, 9430 Vadum';
 
 // ── Haversine afstand i km ─────────────────────────────────────────────────
@@ -32,15 +35,12 @@ async function geocode(address) {
 }
 
 // ── Nearest-neighbor routing ───────────────────────────────────────────────
-// Returnerer aftaler i optimal rækkefølge fra startpunkt
 function nearestNeighborRoute(homeCoords, appts) {
   const withCoords = appts.filter(a => a.coords);
   const withoutCoords = appts.filter(a => !a.coords);
-
   const route = [];
   const remaining = [...withCoords];
   let current = homeCoords;
-
   while (remaining.length > 0) {
     let bestIdx = 0;
     let bestDist = haversine(current.lat, current.lng, remaining[0].coords.lat, remaining[0].coords.lng);
@@ -52,58 +52,185 @@ function nearestNeighborRoute(homeCoords, appts) {
     current = remaining[bestIdx].coords;
     remaining.splice(bestIdx, 1);
   }
-
-  // Aftaler uden adresse til sidst, sorteret efter tidspunkt
   withoutCoords.sort((a, b) => new Date(a.date) - new Date(b.date));
   return [...route, ...withoutCoords.map(a => ({ ...a, distFromPrev: null }))];
 }
 
-export default function MinDag() {
-  const [homeAddress, setHomeAddress] = useState(
-    () => localStorage.getItem(HOME_KEY) || DEFAULT_HOME
+// ── Hjælp: format MM:SS ────────────────────────────────────────────────────
+function fmtTimer(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+// ── Hjælp: addér minutter til HH:MM streng ────────────────────────────────
+function addMinutes(timeStr, minutes) {
+  const [h, m] = timeStr.split(':').map(Number);
+  const total = h * 60 + m + minutes;
+  return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+// ── Pakkeliste ─────────────────────────────────────────────────────────────
+function PackingList({ appointments, date }) {
+  const allEquipment = [...new Set(appointments.flatMap(a => a.equipment || []))].sort();
+  if (allEquipment.length === 0) return null;
+
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const equipKey = `equip_${dateStr}`;
+
+  const [checked, setChecked] = useState(() => getDayRecords()[equipKey] || []);
+
+  const toggle = (item) => {
+    const next = checked.includes(item) ? checked.filter(i => i !== item) : [...checked, item];
+    setChecked(next);
+    saveDayRecords({ ...getDayRecords(), [equipKey]: next });
+  };
+
+  const doneCount = checked.filter(i => allEquipment.includes(i)).length;
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 12, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          🎒 Pakkeliste
+        </div>
+        <div style={{ fontSize: 12, color: doneCount === allEquipment.length ? '#10B981' : '#6B7280', fontWeight: 700 }}>
+          {doneCount}/{allEquipment.length} pakket
+        </div>
+      </div>
+      {allEquipment.map((item, idx) => {
+        const on = checked.includes(item);
+        return (
+          <div key={item} onClick={() => toggle(item)} style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', cursor: 'pointer',
+            borderBottom: idx < allEquipment.length - 1 ? '1px solid #F3F4F6' : 'none',
+          }}>
+            <div style={{
+              width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+              border: `2px solid ${on ? '#10B981' : '#D1D5DB'}`,
+              background: on ? '#10B981' : '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {on && <span style={{ color: '#fff', fontSize: 13, lineHeight: 1 }}>✓</span>}
+            </div>
+            <span style={{ fontSize: 14, fontWeight: 500, color: on ? '#9CA3AF' : '#374151', textDecoration: on ? 'line-through' : 'none' }}>
+              {item}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
+}
+
+// ── Dagsplan-oversigt ──────────────────────────────────────────────────────
+function DagsPlan({ appointments, totalKm, startTime, onStartTimeChange }) {
+  if (appointments.length === 0) return null;
+  const totalWorkMin = appointments.reduce((s, a) => s + (a.duration || 0), 0);
+  const totalTravelMin = Math.round(totalKm * 2); // ~30 km/h → 2 min/km
+  const totalMin = totalWorkMin + totalTravelMin;
+  const endTime = addMinutes(startTime, totalMin);
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 12, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+        📋 Dagsplan
+      </div>
+
+      {/* Starttid */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <span style={{ fontSize: 14, color: '#374151', fontWeight: 600 }}>Start</span>
+        <input
+          type="time"
+          value={startTime}
+          onChange={e => onStartTimeChange(e.target.value)}
+          style={{ fontSize: 18, fontWeight: 800, color: '#2563EB', background: '#EFF6FF', borderRadius: 8, padding: '4px 10px', border: 'none' }}
+        />
+      </div>
+
+      {/* Tid-rækker */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, background: '#F0FDF4', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', marginBottom: 4 }}>Arbejde</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#10B981' }}>{formatDuration(totalWorkMin)}</div>
+        </div>
+        {totalKm > 0 && (
+          <div style={{ flex: 1, background: '#FFF7ED', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', marginBottom: 4 }}>Kørsel</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#F59E0B' }}>{formatDuration(totalTravelMin)}</div>
+          </div>
+        )}
+        <div style={{ flex: 1, background: '#EFF6FF', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', marginBottom: 4 }}>Total</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#2563EB' }}>{formatDuration(totalMin)}</div>
+        </div>
+      </div>
+
+      {/* Sluttid */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F9FAFB', borderRadius: 10, padding: '10px 14px' }}>
+        <span style={{ fontSize: 14, color: '#6B7280', fontWeight: 600 }}>Forventet slut</span>
+        <span style={{ fontSize: 20, fontWeight: 900, color: '#111827' }}>{endTime}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Hoved-komponent ────────────────────────────────────────────────────────
+export default function MinDag() {
+  const [homeAddress, setHomeAddress] = useState(() => localStorage.getItem(HOME_KEY) || DEFAULT_HOME);
   const [editingHome, setEditingHome] = useState(false);
   const [tempHome, setTempHome] = useState('');
+  const [startTime, setStartTime] = useState(() => localStorage.getItem(STARTTIME_KEY) || '08:00');
+
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date(); d.setHours(0, 0, 0, 0); return d;
+  });
+  const [showCal, setShowCal] = useState(false);
+
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [totalKm, setTotalKm] = useState(0);
 
-  const today = new Date();
-  const todayLabel = today.toLocaleDateString('da-DK', {
-    weekday: 'long', day: 'numeric', month: 'long',
-  });
+  const nowDay = new Date(); nowDay.setHours(0, 0, 0, 0);
+  const isToday = selectedDate.getTime() === nowDay.getTime();
 
-  // ── Hent og sorter dagens aftaler ────────────────────────────────────────
+  const dayLabel = selectedDate.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const prevDay = () => setSelectedDate(d => { const n = new Date(d); n.setDate(n.getDate() - 1); return n; });
+  const nextDay = () => setSelectedDate(d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n; });
+
+  const saveStartTime = (t) => {
+    setStartTime(t);
+    localStorage.setItem(STARTTIME_KEY, t);
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     const allAppts = getAppointments();
     const customers = getCustomers();
     const custMap = Object.fromEntries(customers.map(c => [c.id, c]));
 
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const todayEnd = new Date(todayStart.getTime() + 86400000);
-
-    const todayAppts = allAppts
-      .filter(a => occursOnDate(a, today))
+    const dayAppts = allAppts
+      .filter(a => occursOnDate(a, selectedDate))
       .map(a => ({ ...a, customer: custMap[a.customerId] || null }));
 
-    if (todayAppts.length === 0) {
+    if (dayAppts.length === 0) {
       setAppointments([]);
+      setTotalKm(0);
       setLoading(false);
       return;
     }
 
-    // Geocode bopæl og alle kundeadresser parallelt
     const [homeCoords, ...apptCoords] = await Promise.all([
       geocode(homeAddress),
-      ...todayAppts.map(a => geocode(a.customer?.address)),
+      ...dayAppts.map(a => geocode(a.customer?.address)),
     ]);
 
-    const enriched = todayAppts.map((a, i) => ({ ...a, coords: apptCoords[i] }));
+    const enriched = dayAppts.map((a, i) => ({ ...a, coords: apptCoords[i] }));
 
     if (!homeCoords) {
-      // Kan ikke beregne rute – sorter på tidspunkt
       setAppointments(enriched.map(a => ({ ...a, distFromPrev: null })).sort((a, b) => new Date(a.date) - new Date(b.date)));
+      setTotalKm(0);
       setLoading(false);
       return;
     }
@@ -113,7 +240,7 @@ export default function MinDag() {
     setTotalKm(km);
     setAppointments(routed);
     setLoading(false);
-  }, [homeAddress]);
+  }, [homeAddress, selectedDate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -123,16 +250,37 @@ export default function MinDag() {
     setEditingHome(false);
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // Kalender-portal
+  const calPortal = showCal && createPortal(
+    <div onClick={e => { if (e.target === e.currentTarget) setShowCal(false); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'flex-end' }}>
+      <div style={{ background: '#F9FAFB', borderRadius: '20px 20px 0 0', width: '100%', padding: '16px 16px 32px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontSize: 17, fontWeight: 700 }}>Vælg dato</span>
+          <button onClick={() => setShowCal(false)} style={{ fontSize: 26, color: '#6B7280', lineHeight: 1 }}>×</button>
+        </div>
+        <CalendarPicker value={selectedDate} onChange={d => { setSelectedDate(d); setShowCal(false); }} />
+      </div>
+    </div>,
+    document.body
+  );
+
   return (
     <div style={{ paddingBottom: 40 }}>
       {/* Header */}
       <div style={{ background: '#2563EB', padding: '18px 20px 44px', paddingTop: 'calc(18px + env(safe-area-inset-top))' }}>
-        <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 600, textTransform: 'capitalize', marginBottom: 4 }}>
-          {todayLabel}
+        {/* Dato-navigation */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <button onClick={prevDay} style={{ color: 'rgba(255,255,255,0.85)', fontSize: 28, lineHeight: 1, padding: '0 6px' }}>‹</button>
+          <button onClick={() => setShowCal(v => !v)} style={{ flex: 1, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: 700, textTransform: 'capitalize' }}>
+            {isToday ? '📅 I dag — ' : '📅 '}{dayLabel}
+          </button>
+          <button onClick={nextDay} style={{ color: 'rgba(255,255,255,0.85)', fontSize: 28, lineHeight: 1, padding: '0 6px' }}>›</button>
         </div>
         <div style={{ color: '#fff', fontSize: 26, fontWeight: 800 }}>
-          {loading ? 'Beregner rute...' : appointments.length === 0 ? 'Fri dag!' : `${appointments.length} aftale${appointments.length !== 1 ? 'r' : ''} i dag`}
+          {loading ? 'Beregner rute...' : appointments.length === 0
+            ? (isToday ? 'Fri dag!' : 'Ingen aftaler')
+            : `${appointments.length} aftale${appointments.length !== 1 ? 'r' : ''}`}
         </div>
         {!loading && appointments.length > 0 && totalKm > 0 && (
           <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 4 }}>
@@ -149,11 +297,9 @@ export default function MinDag() {
           </div>
           {editingHome ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                autoFocus
+              <input autoFocus
                 style={{ flex: 1, fontSize: 14, borderBottom: '2px solid #2563EB', paddingBottom: 4, color: '#111827' }}
-                value={tempHome}
-                onChange={e => setTempHome(e.target.value)}
+                value={tempHome} onChange={e => setTempHome(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') saveHome(); if (e.key === 'Escape') setEditingHome(false); }}
               />
               <button onClick={saveHome} style={{ color: '#2563EB', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>Gem</button>
@@ -163,17 +309,15 @@ export default function MinDag() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 18 }}>🏠</span>
               <span style={{ flex: 1, fontSize: 14, color: '#374151' }}>{homeAddress}</span>
-              <button
-                onClick={() => { setTempHome(homeAddress); setEditingHome(true); }}
-                style={{ color: '#9CA3AF', fontSize: 13, flexShrink: 0 }}
-              >Skift</button>
+              <button onClick={() => { setTempHome(homeAddress); setEditingHome(true); }}
+                style={{ color: '#9CA3AF', fontSize: 13, flexShrink: 0 }}>Skift</button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Aftaler */}
-      <div style={{ padding: '14px 16px 0' }}>
+      {/* Indhold */}
+      <div style={{ padding: '12px 16px 0' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '48px 0', color: '#9CA3AF' }}>
             <div style={{ fontSize: 32, marginBottom: 10 }}>⏳</div>
@@ -182,45 +326,34 @@ export default function MinDag() {
         ) : appointments.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '48px 0', color: '#9CA3AF' }}>
             <div style={{ fontSize: 56, marginBottom: 12 }}>☀️</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#374151' }}>Fri dag!</div>
-            <div style={{ fontSize: 14, marginTop: 8 }}>Ingen aftaler planlagt i dag</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#374151' }}>{isToday ? 'Fri dag!' : 'Ingen aftaler'}</div>
+            <div style={{ fontSize: 14, marginTop: 8 }}>Ingen aftaler planlagt {isToday ? 'i dag' : 'denne dag'}</div>
           </div>
         ) : (
-          appointments.map((a, i) => (
-            <AppCard key={a.id} appt={a} index={i} isFirst={i === 0} isLast={i === appointments.length - 1} />
-          ))
+          <>
+            <DagsPlan appointments={appointments} totalKm={totalKm} startTime={startTime} onStartTimeChange={saveStartTime} />
+            <PackingList appointments={appointments} date={selectedDate} />
+            {appointments.map((a, i) => (
+              <AppCard key={a.id} appt={a} index={i} isFirst={i === 0} isLast={i === appointments.length - 1} date={selectedDate} />
+            ))}
+          </>
         )}
       </div>
+
+      {calPortal}
     </div>
   );
 }
 
-// ── Hjælpefunktion: format sekunder som MM:SS ──────────────────────────────
-function fmtTimer(s) {
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-}
-
 // ── Aftale-kort ────────────────────────────────────────────────────────────
-function AppCard({ appt, index, isFirst, isLast }) {
+function AppCard({ appt, index, isFirst, isLast, date }) {
   const addr = appt.customer?.address;
-  const mapsUrl = addr
-    ? `https://maps.apple.com/?daddr=${encodeURIComponent(addr)}&dirflg=d`
-    : null;
+  const mapsUrl = addr ? `https://maps.apple.com/?daddr=${encodeURIComponent(addr)}&dirflg=d` : null;
 
-  const today = new Date();
-  const dayKey = getDayKey(appt.id, today);
+  const dayKey = getDayKey(appt.id, date);
 
-  // Hent gemt tilstand
-  const [completed, setCompleted] = useState(() => {
-    const rec = getDayRecords()[dayKey];
-    return rec?.completed || false;
-  });
-  const [timerSeconds, setTimerSeconds] = useState(() => {
-    const rec = getDayRecords()[dayKey];
-    return rec?.timerSeconds || 0;
-  });
+  const [completed, setCompleted] = useState(() => getDayRecords()[dayKey]?.completed || false);
+  const [timerSeconds, setTimerSeconds] = useState(() => getDayRecords()[dayKey]?.timerSeconds || 0);
   const [timerRunning, setTimerRunning] = useState(false);
   const intervalRef = useRef(null);
   const startTimeRef = useRef(null);
@@ -228,10 +361,9 @@ function AppCard({ appt, index, isFirst, isLast }) {
   useEffect(() => () => clearInterval(intervalRef.current), []);
 
   const toggleComplete = () => {
-    const newVal = !completed;
-    setCompleted(newVal);
-    const records = getDayRecords();
-    saveDayRecords({ ...records, [dayKey]: { ...records[dayKey], completed: newVal } });
+    const v = !completed;
+    setCompleted(v);
+    saveDayRecords({ ...getDayRecords(), [dayKey]: { ...getDayRecords()[dayKey], completed: v } });
   };
 
   const startTimer = () => {
@@ -247,16 +379,14 @@ function AppCard({ appt, index, isFirst, isLast }) {
     setTimerRunning(false);
     const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
     setTimerSeconds(elapsed);
-    const records = getDayRecords();
-    saveDayRecords({ ...records, [dayKey]: { ...records[dayKey], timerSeconds: elapsed } });
+    saveDayRecords({ ...getDayRecords(), [dayKey]: { ...getDayRecords()[dayKey], timerSeconds: elapsed } });
   };
 
   const resetTimer = () => {
     clearInterval(intervalRef.current);
     setTimerRunning(false);
     setTimerSeconds(0);
-    const records = getDayRecords();
-    saveDayRecords({ ...records, [dayKey]: { ...records[dayKey], timerSeconds: 0 } });
+    saveDayRecords({ ...getDayRecords(), [dayKey]: { ...getDayRecords()[dayKey], timerSeconds: 0 } });
   };
 
   return (
@@ -271,19 +401,15 @@ function AppCard({ appt, index, isFirst, isLast }) {
         }}>
           {completed ? '✓' : index + 1}
         </div>
-        {!isLast && (
-          <div style={{ width: 2, flex: 1, background: '#E5E7EB', margin: '4px 0', minHeight: 20 }} />
-        )}
+        {!isLast && <div style={{ width: 2, flex: 1, background: '#E5E7EB', margin: '4px 0', minHeight: 20 }} />}
       </div>
 
       {/* Kortindhold */}
       <div style={{
         flex: 1, background: completed ? '#F0FDF4' : '#fff',
         borderRadius: 14, padding: 14, marginBottom: 10,
-        boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
-        opacity: completed ? 0.85 : 1,
+        boxShadow: '0 1px 6px rgba(0,0,0,0.06)', opacity: completed ? 0.85 : 1,
       }}>
-        {/* Afstand fra forrige */}
         {appt.distFromPrev != null && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#F0FDF4', borderRadius: 8, padding: '3px 10px', marginBottom: 10 }}>
             <span style={{ fontSize: 12 }}>🚗</span>
@@ -294,34 +420,34 @@ function AppCard({ appt, index, isFirst, isLast }) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-          <div style={{ fontWeight: 700, fontSize: 16, color: completed ? '#6B7280' : '#111827', flex: 1, textDecoration: completed ? 'line-through' : 'none' }}>{appt.title}</div>
+          <div style={{ fontWeight: 700, fontSize: 16, color: completed ? '#6B7280' : '#111827', flex: 1, textDecoration: completed ? 'line-through' : 'none' }}>
+            {appt.title}
+          </div>
           {appt.duration > 0 && (
             <div style={{ background: '#F0FDF4', color: '#10B981', fontSize: 13, fontWeight: 700, borderRadius: 8, padding: '3px 8px', flexShrink: 0 }}>
               ⏱ {formatDuration(appt.duration)}
             </div>
           )}
         </div>
-        {formatRecurrence(appt) && (
-          <div style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600, marginTop: 2 }}>
-            🔁 {formatRecurrence(appt)}
-          </div>
-        )}
 
+        {formatRecurrence(appt) && (
+          <div style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600, marginTop: 2 }}>🔁 {formatRecurrence(appt)}</div>
+        )}
         {appt.customer && (
           <div style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>👤 {appt.customer.name}</div>
         )}
-
+        {appt.price > 0 && (
+          <div style={{ fontSize: 13, color: '#10B981', fontWeight: 700, marginTop: 4 }}>💰 {appt.price.toLocaleString('da-DK')} kr</div>
+        )}
         {addr ? (
           <div style={{ fontSize: 13, color: '#6B7280', marginTop: 4, display: 'flex', gap: 4 }}>
-            <span style={{ flexShrink: 0 }}>📍</span>
-            <span>{addr}</span>
+            <span style={{ flexShrink: 0 }}>📍</span><span>{addr}</span>
           </div>
         ) : (
           <div style={{ fontSize: 12, color: '#D1D5DB', marginTop: 4, fontStyle: 'italic' }}>
             Ingen adresse – kan ikke beregne afstand
           </div>
         )}
-
         {appt.notes && (
           <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 8, fontStyle: 'italic', borderTop: '1px solid #F3F4F6', paddingTop: 8 }}>
             {appt.notes}
@@ -336,46 +462,32 @@ function AppCard({ appt, index, isFirst, isLast }) {
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               {timerRunning ? (
-                <button onClick={stopTimer} style={{ background: '#FEF3C7', color: '#D97706', borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 700 }}>
-                  ⏸ Stop
-                </button>
+                <button onClick={stopTimer} style={{ background: '#FEF3C7', color: '#D97706', borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 700 }}>⏸ Stop</button>
               ) : (
-                <button onClick={startTimer} style={{ background: '#EFF6FF', color: '#2563EB', borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 700 }}>
-                  ▶ Start
-                </button>
+                <button onClick={startTimer} style={{ background: '#EFF6FF', color: '#2563EB', borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 700 }}>▶ Start</button>
               )}
               {timerSeconds > 0 && !timerRunning && (
-                <button onClick={resetTimer} style={{ background: '#FEE2E2', color: '#EF4444', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 700 }}>
-                  ✕
-                </button>
+                <button onClick={resetTimer} style={{ background: '#FEE2E2', color: '#EF4444', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 700 }}>✕</button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Knapper: naviger + gennemfør */}
+        {/* Handlingsknapper */}
         <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
           {mapsUrl && (
-            <a
-              href={mapsUrl}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                background: '#2563EB', color: '#fff', borderRadius: 10,
-                padding: '9px 16px', fontSize: 13, fontWeight: 700, textDecoration: 'none',
-              }}
-            >
-              🧭 Naviger
-            </a>
-          )}
-          <button
-            onClick={toggleComplete}
-            style={{
+            <a href={mapsUrl} style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: completed ? '#10B981' : '#F0FDF4',
-              color: completed ? '#fff' : '#10B981',
-              borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 700,
-            }}
-          >
+              background: '#2563EB', color: '#fff', borderRadius: 10,
+              padding: '9px 16px', fontSize: 13, fontWeight: 700, textDecoration: 'none',
+            }}>🧭 Naviger</a>
+          )}
+          <button onClick={toggleComplete} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: completed ? '#10B981' : '#F0FDF4',
+            color: completed ? '#fff' : '#10B981',
+            borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 700,
+          }}>
             {completed ? '✓ Gennemført' : '○ Marker færdig'}
           </button>
         </div>

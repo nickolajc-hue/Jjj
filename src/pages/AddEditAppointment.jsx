@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration } from '../storage.js';
+import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration, EQUIPMENT_LIST } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 import CalendarPicker from '../components/CalendarPicker.jsx';
 
@@ -32,6 +32,8 @@ export default function AddEditAppointment() {
   const [duration, setDuration] = useState('60');
   const [recurrence, setRecurrence] = useState('none');
   const [recurrenceInterval, setRecurrenceInterval] = useState('2'); // antal uger ved 'custom'
+  const [price, setPrice] = useState('');
+  const [equipment, setEquipment] = useState([]);
 
   const tomorrow = new Date(Date.now() + 86400000);
   tomorrow.setHours(0, 0, 0, 0);
@@ -51,6 +53,8 @@ export default function AddEditAppointment() {
         const d = new Date(a.date);
         d.setHours(0, 0, 0, 0);
         setSelectedDate(d);
+        setPrice(a.price ? String(a.price) : '');
+        setEquipment(a.equipment || []);
       }
     }
   }, [id]);
@@ -71,6 +75,8 @@ export default function AddEditAppointment() {
       duration: parseInt(duration) || 60,
       recurrence,
       recurrenceInterval: recurrence === 'custom' ? (parseInt(recurrenceInterval) || 2) : null,
+      price: parseFloat(price) || 0,
+      equipment,
     };
 
     const all = getAppointments();
@@ -176,6 +182,37 @@ export default function AddEditAppointment() {
               ≈ {formatDuration(parseInt(duration))}
             </div>
           )}
+        </div>
+
+        {/* Pris */}
+        <label style={lbl}>Pris</label>
+        <div style={{ ...fld, marginBottom: 12 }}>
+          <span style={{ fontSize: 18 }}>💰</span>
+          <input
+            style={{ flex: 1, fontSize: 18, fontWeight: 700 }}
+            type="number" inputMode="decimal"
+            value={price} onChange={e => setPrice(e.target.value)}
+            placeholder="0"
+          />
+          <span style={{ fontSize: 14, color: '#6B7280', fontWeight: 600 }}>kr</span>
+        </div>
+
+        {/* Redskaber */}
+        <label style={lbl}>Redskaber</label>
+        <div style={{ background: '#fff', borderRadius: 12, padding: '10px 12px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {EQUIPMENT_LIST.map(item => {
+            const sel = equipment.includes(item);
+            return (
+              <button key={item} onClick={() => setEquipment(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item])} style={{
+                borderRadius: 20, padding: '7px 12px', fontSize: 13, fontWeight: 600, border: '2px solid',
+                borderColor: sel ? '#2563EB' : '#E5E7EB',
+                background: sel ? '#EFF6FF' : '#F9FAFB',
+                color: sel ? '#2563EB' : '#6B7280',
+              }}>
+                {item}
+              </button>
+            );
+          })}
         </div>
 
         {/* Gentagelse */}

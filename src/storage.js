@@ -58,6 +58,26 @@ export function formatRecurrence(appt) {
   return RECURRENCE_LABELS[appt.recurrence] || null;
 }
 
+export const EQUIPMENT_LIST = [
+  'Plæneklipper', 'Kantklipper', 'Hækkeklipper', 'Løvblæser',
+  'Greensuge', 'Trillebør', 'Rive', 'Spade', 'Vandslange',
+  'Trailer', 'Stige', 'Motorsav',
+];
+
+export function calcExpectedIncome(appointments, startDate, endDate) {
+  return appointments.reduce((sum, a) => {
+    if (!a.price || a.price <= 0) return sum;
+    let count = 0;
+    const d = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    while (d < end) {
+      if (occursOnDate(a, d)) count++;
+      d.setDate(d.getDate() + 1);
+    }
+    return sum + a.price * count;
+  }, 0);
+}
+
 export function occursOnDate(appt, targetDate) {
   const start = new Date(appt.date);
   const target = new Date(targetDate);
