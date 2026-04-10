@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration, EQUIPMENT_LIST, getCustomEquipment, saveCustomEquipment } from '../storage.js';
+import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration, EQUIPMENT_LIST, getCustomEquipment, saveCustomEquipment, APPOINTMENT_COLORS } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 import CalendarPicker from '../components/CalendarPicker.jsx';
 
@@ -31,6 +31,7 @@ export default function AddEditAppointment() {
   const [showPicker, setShowPicker] = useState(false);
   const [duration, setDuration] = useState('60');
   const [recurrence, setRecurrence] = useState('none');
+  const [color, setColor] = useState('blue');
   const [recurrenceInterval, setRecurrenceInterval] = useState('2'); // antal uger ved 'custom'
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(null);
   const [price, setPrice] = useState('');
@@ -50,6 +51,7 @@ export default function AddEditAppointment() {
         setTitle(a.title || '');
         setNotes(a.notes || '');
         setCustomerId(a.customerId || '');
+        setColor(a.color || 'blue');
         setDuration(String(a.duration || 60));
         setRecurrence(a.recurrence || 'none');
         setRecurrenceInterval(String(a.recurrenceInterval || 2));
@@ -78,6 +80,7 @@ export default function AddEditAppointment() {
       title,
       notes,
       customerId,
+      color,
       date: dateObj.toISOString(),
       duration: parseInt(duration) || 60,
       recurrence,
@@ -145,6 +148,19 @@ export default function AddEditAppointment() {
           <span style={{ fontSize: 18 }}>📋</span>
           <input style={{ flex: 1, fontSize: 16 }} value={title} onChange={e => setTitle(e.target.value)}
             placeholder="F.eks. Græsslåning, Rengøring..." />
+        </div>
+
+        {/* Farve */}
+        <label style={lbl}>Farve</label>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14, paddingLeft: 2 }}>
+          {APPOINTMENT_COLORS.map(c => (
+            <button key={c.id} onClick={() => setColor(c.id)} style={{
+              width: 34, height: 34, borderRadius: 17, background: c.hex, flexShrink: 0,
+              outline: color === c.id ? `3px solid ${c.hex}` : '3px solid transparent',
+              outlineOffset: 2,
+              boxShadow: color === c.id ? '0 0 0 2px #fff inset' : 'none',
+            }} />
+          ))}
         </div>
 
         {/* Kunde */}

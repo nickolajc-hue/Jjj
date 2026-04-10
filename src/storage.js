@@ -40,6 +40,34 @@ export function saveCustomEquipment(items) {
   localStorage.setItem(CUSTOM_EQUIPMENT_KEY, JSON.stringify(items));
 }
 
+export const APPOINTMENT_COLORS = [
+  { id: 'blue',   hex: '#2563EB' },
+  { id: 'green',  hex: '#16A34A' },
+  { id: 'orange', hex: '#EA580C' },
+  { id: 'red',    hex: '#DC2626' },
+  { id: 'purple', hex: '#7C3AED' },
+  { id: 'pink',   hex: '#DB2777' },
+  { id: 'teal',   hex: '#0891B2' },
+  { id: 'gray',   hex: '#4B5563' },
+];
+
+export function getApptColor(appt) {
+  const c = APPOINTMENT_COLORS.find(c => c.id === appt?.color);
+  return c ? c.hex : '#2563EB';
+}
+
+const PHOTOS_KEY = 'kundeapp_photos';
+export function getApptPhotos(apptId) {
+  try { return JSON.parse(localStorage.getItem(PHOTOS_KEY) || '{}')[apptId] || []; }
+  catch { return []; }
+}
+export function saveApptPhotos(apptId, photos) {
+  try {
+    const all = JSON.parse(localStorage.getItem(PHOTOS_KEY) || '{}');
+    localStorage.setItem(PHOTOS_KEY, JSON.stringify({ ...all, [apptId]: photos }));
+  } catch { throw new Error('storage_full'); }
+}
+
 export const RECURRENCE_LABELS = {
   none:     'Ingen gentagelse',
   daily:    'Daglig',

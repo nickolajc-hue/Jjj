@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { getAppointments, getCustomers, occursOnDate, formatDuration, formatRecurrence, getDayRecords, saveDayRecords, getDayKey } from '../storage.js';
+import { getAppointments, getCustomers, occursOnDate, formatDuration, formatRecurrence, getDayRecords, saveDayRecords, getDayKey, getApptColor, getApptPhotos, saveApptPhotos, newId } from '../storage.js';
 import CalendarPicker from '../components/CalendarPicker.jsx';
 
 const HOME_KEY = 'kundeapp_home_address';
@@ -345,10 +345,32 @@ export default function MinDag() {
   );
 }
 
+// ── Foto-komprimering ──────────────────────────────────────────────────────
+async function compressPhoto(file) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1000;
+        const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * ratio);
+        canvas.height = Math.round(img.height * ratio);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 // ── Aftale-kort ────────────────────────────────────────────────────────────
 function AppCard({ appt, index, isFirst, isLast, date }) {
   const addr = appt.customer?.address;
   const mapsUrl = addr ? `https://maps.apple.com/?daddr=${encodeURIComponent(addr)}&dirflg=d` : null;
+  const color = getApptColor(appt);
 
   const dayKey = getDayKey(appt.id, date);
 
@@ -357,6 +379,10 @@ function AppCard({ appt, index, isFirst, isLast, date }) {
   const [timerRunning, setTimerRunning] = useState(false);
   const intervalRef = useRef(null);
   const startTimeRef = useRef(null);
+
+  const [photos, setPhotos] = useState(() => getApptPhotos(appt.id));
+  const [lightbox, setLightbox] = useState(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => () => clearInterval(intervalRef.current), []);
 
@@ -389,13 +415,30 @@ function AppCard({ appt, index, isFirst, isLast, date }) {
     saveDayRecords({ ...getDayRecords(), [dayKey]: { ...getDayRecords()[dayKey], timerSeconds: 0 } });
   };
 
+  const handlePhoto = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const dataUrl = await compressPhoto(file);
+    const updated = [...photos, { id: newId(), date: new Date().toISOString(), dataUrl }];
+    try { saveApptPhotos(appt.id, updated); setPhotos(updated); }
+    catch { alert('Ikke nok lagerplads til foto.'); }
+    e.target.value = '';
+  };
+
+  const deletePhoto = (pid) => {
+    const updated = photos.filter(p => p.id !== pid);
+    saveApptPhotos(appt.id, updated);
+    setPhotos(updated);
+    if (lightbox) setLightbox(null);
+  };
+
   return (
     <div style={{ display: 'flex', gap: 12, marginBottom: 0 }}>
       {/* Tidslinje */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 36, flexShrink: 0 }}>
         <div style={{
           width: 36, height: 36, borderRadius: 18,
-          background: completed ? '#10B981' : '#2563EB', color: '#fff',
+          background: completed ? '#10B981' : color, color: '#fff',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: completed ? 20 : 15, fontWeight: 800, flexShrink: 0, zIndex: 1,
         }}>
@@ -409,6 +452,7 @@ function AppCard({ appt, index, isFirst, isLast, date }) {
         flex: 1, background: completed ? '#F0FDF4' : '#fff',
         borderRadius: 14, padding: 14, marginBottom: 10,
         boxShadow: '0 1px 6px rgba(0,0,0,0.06)', opacity: completed ? 0.85 : 1,
+        borderLeft: `3px solid ${completed ? '#10B981' : color}`,
       }}>
         {appt.distFromPrev != null && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#F0FDF4', borderRadius: 8, padding: '3px 10px', marginBottom: 10 }}>
@@ -457,14 +501,14 @@ function AppCard({ appt, index, isFirst, isLast, date }) {
         {/* Stopur */}
         <div style={{ marginTop: 12, background: '#F9FAFB', borderRadius: 10, padding: '10px 12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: timerRunning ? '#2563EB' : '#374151', fontVariantNumeric: 'tabular-nums', letterSpacing: 1 }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: timerRunning ? color : '#374151', fontVariantNumeric: 'tabular-nums', letterSpacing: 1 }}>
               {fmtTimer(timerSeconds)}
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               {timerRunning ? (
                 <button onClick={stopTimer} style={{ background: '#FEF3C7', color: '#D97706', borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 700 }}>⏸ Stop</button>
               ) : (
-                <button onClick={startTimer} style={{ background: '#EFF6FF', color: '#2563EB', borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 700 }}>▶ Start</button>
+                <button onClick={startTimer} style={{ background: '#EFF6FF', color: color, borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 700 }}>▶ Start</button>
               )}
               {timerSeconds > 0 && !timerRunning && (
                 <button onClick={resetTimer} style={{ background: '#FEE2E2', color: '#EF4444', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 700 }}>✕</button>
@@ -473,12 +517,34 @@ function AppCard({ appt, index, isFirst, isLast, date }) {
           </div>
         </div>
 
+        {/* Fotos */}
+        <div style={{ marginTop: 10, borderTop: '1px solid #F3F4F6', paddingTop: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: photos.length > 0 ? 8 : 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              📷 Dokumentation{photos.length > 0 ? ` (${photos.length})` : ''}
+            </div>
+            <button onClick={() => fileInputRef.current?.click()} style={{ fontSize: 13, color: color, fontWeight: 700 }}>
+              + Tilføj foto
+            </button>
+            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhoto} />
+          </div>
+          {photos.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {photos.map(ph => (
+                <div key={ph.id} style={{ position: 'relative' }} onClick={() => setLightbox(ph)}>
+                  <img src={ph.dataUrl} alt="" style={{ width: 76, height: 76, borderRadius: 8, objectFit: 'cover', display: 'block' }} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Handlingsknapper */}
         <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
           {mapsUrl && (
             <a href={mapsUrl} style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: '#2563EB', color: '#fff', borderRadius: 10,
+              background: color, color: '#fff', borderRadius: 10,
               padding: '9px 16px', fontSize: 13, fontWeight: 700, textDecoration: 'none',
             }}>🧭 Naviger</a>
           )}
@@ -492,6 +558,28 @@ function AppCard({ appt, index, isFirst, isLast, date }) {
           </button>
         </div>
       </div>
+
+      {/* Lightbox */}
+      {lightbox && createPortal(
+        <div onClick={() => setLightbox(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.93)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <img src={lightbox.dataUrl} alt="" style={{ maxWidth: '95vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain' }} />
+          <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+            <button onClick={(e) => { e.stopPropagation(); deletePhoto(lightbox.id); }}
+              style={{ background: '#EF4444', color: '#fff', borderRadius: 10, padding: '10px 24px', fontSize: 14, fontWeight: 700 }}>
+              🗑 Slet foto
+            </button>
+            <button onClick={() => setLightbox(null)}
+              style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: 10, padding: '10px 24px', fontSize: 14, fontWeight: 700 }}>
+              Luk
+            </button>
+          </div>
+          <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 10 }}>
+            {new Date(lightbox.date).toLocaleDateString('da-DK', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

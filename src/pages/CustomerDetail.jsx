@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getCustomers, getAppointments, formatDuration, formatRecurrence, nextOccurrence } from '../storage.js';
+import { getCustomers, getAppointments, formatDuration, formatRecurrence, nextOccurrence, getApptColor } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 
 function formatDate(iso) {
@@ -94,7 +94,7 @@ export default function CustomerDetail() {
         {upcoming.length === 0 ? (
           <div style={{ color: '#9CA3AF', fontSize: 14, fontStyle: 'italic' }}>Ingen kommende aftaler</div>
         ) : upcoming.map(a => (
-          <div key={a.id} style={S.apptCard}>
+          <div key={a.id} style={{ ...S.apptCard, borderLeft: `3px solid ${getApptColor(a)}` }}>
             <span style={{ fontSize: 18, flexShrink: 0 }}>🕐</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 14 }}>{a.title}</div>
