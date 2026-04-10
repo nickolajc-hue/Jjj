@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getCustomers, getAppointments } from '../storage.js';
+import { getCustomers, getAppointments, formatDuration, RECURRENCE_LABELS, nextOccurrence } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 
 function formatDate(iso) {
-  return new Date(iso).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 const S = {
@@ -25,14 +25,15 @@ export default function CustomerDetail() {
     const c = getCustomers().find(x => x.id === id);
     setCustomer(c);
     const now = new Date();
-    const appts = getAppointments().filter(a => a.customerId === id).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const appts = getAppointments().filter(a => a.customerId === id).sort((a, b) => nextOccurrence(a) - nextOccurrence(b));
     setAppointments(appts);
   }, [id]);
 
   if (!customer) return <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF' }}>Kunde ikke fundet</div>;
 
-  const upcoming = appointments.filter(a => new Date(a.date) >= new Date());
-  const past = appointments.filter(a => new Date(a.date) < new Date());
+  const today = new Date(); today.setHours(0,0,0,0);
+  const upcoming = appointments.filter(a => nextOccurrence(a) >= today);
+  const past = appointments.filter(a => nextOccurrence(a) < today && (!a.recurrence || a.recurrence === 'none'));
 
   return (
     <div style={{ paddingBottom: 32 }}>
@@ -95,9 +96,13 @@ export default function CustomerDetail() {
         ) : upcoming.map(a => (
           <div key={a.id} style={S.apptCard}>
             <span style={{ fontSize: 18, flexShrink: 0 }}>🕐</span>
-            <div>
+            <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 14 }}>{a.title}</div>
-              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{formatDate(a.date)}</div>
+              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{formatDate(nextOccurrence(a).toISOString())}</div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                {a.duration > 0 && <span style={{ background: '#D1FAE5', color: '#059669', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px' }}>⏱ {formatDuration(a.duration)}</span>}
+                {a.recurrence && a.recurrence !== 'none' && <span style={{ background: '#FEF3C7', color: '#D97706', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px' }}>🔁 {RECURRENCE_LABELS[a.recurrence]}</span>}
+              </div>
               {a.notes && <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>{a.notes}</div>}
             </div>
           </div>
@@ -114,6 +119,7 @@ export default function CustomerDetail() {
               <div>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{a.title}</div>
                 <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{formatDate(a.date)}</div>
+                {a.duration > 0 && <span style={{ fontSize: 11, color: '#6B7280' }}>⏱ {formatDuration(a.duration)}</span>}
                 {a.notes && <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>{a.notes}</div>}
               </div>
             </div>

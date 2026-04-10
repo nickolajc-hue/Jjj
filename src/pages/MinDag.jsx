@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getAppointments, getCustomers } from '../storage.js';
+import { getAppointments, getCustomers, occursOnDate, formatDuration, RECURRENCE_LABELS } from '../storage.js';
 
 const HOME_KEY = 'kundeapp_home_address';
 const DEFAULT_HOME = 'Æblerosevej 8, 9430 Vadum';
@@ -84,7 +84,7 @@ export default function MinDag() {
     const todayEnd = new Date(todayStart.getTime() + 86400000);
 
     const todayAppts = allAppts
-      .filter(a => { const d = new Date(a.date); return d >= todayStart && d < todayEnd; })
+      .filter(a => occursOnDate(a, today))
       .map(a => ({ ...a, customer: custMap[a.customerId] || null }));
 
     if (todayAppts.length === 0) {
@@ -197,7 +197,6 @@ export default function MinDag() {
 
 // ── Aftale-kort ────────────────────────────────────────────────────────────
 function AppCard({ appt, index, isFirst, isLast }) {
-  const time = new Date(appt.date).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
   const addr = appt.customer?.address;
   const mapsUrl = addr
     ? `https://maps.apple.com/?daddr=${encodeURIComponent(addr)}&dirflg=d`
@@ -234,8 +233,17 @@ function AppCard({ appt, index, isFirst, isLast }) {
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
           <div style={{ fontWeight: 700, fontSize: 16, color: '#111827', flex: 1 }}>{appt.title}</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#2563EB', flexShrink: 0 }}>{time}</div>
+          {appt.duration > 0 && (
+            <div style={{ background: '#F0FDF4', color: '#10B981', fontSize: 13, fontWeight: 700, borderRadius: 8, padding: '3px 8px', flexShrink: 0 }}>
+              ⏱ {formatDuration(appt.duration)}
+            </div>
+          )}
         </div>
+        {appt.recurrence && appt.recurrence !== 'none' && (
+          <div style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600, marginTop: 2 }}>
+            🔁 {RECURRENCE_LABELS[appt.recurrence]}
+          </div>
+        )}
 
         {appt.customer && (
           <div style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>👤 {appt.customer.name}</div>

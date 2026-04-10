@@ -3,18 +3,18 @@ import { NavLink } from 'react-router-dom';
 
 const tabs = [
   {
-    to: '/min-dag', label: 'Min dag',
-    icon: (a) => (
-      <svg width="23" height="23" viewBox="0 0 24 24" fill={a ? '#2563EB' : '#9CA3AF'}>
-        <path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79zM4 10.5H1v2h3zm9-9.95h-2V3.5h2zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79zM20 10.5v2h3v-2zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41z"/>
-      </svg>
-    ),
-  },
-  {
     to: '/overblik', label: 'Overblik',
     icon: (a) => (
       <svg width="23" height="23" fill={a ? '#2563EB' : '#9CA3AF'} viewBox="0 0 24 24">
         <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+      </svg>
+    ),
+  },
+  {
+    to: '/min-dag', label: 'Min dag',
+    icon: (a) => (
+      <svg width="23" height="23" viewBox="0 0 24 24" fill={a ? '#2563EB' : '#9CA3AF'}>
+        <path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79zM4 10.5H1v2h3zm9-9.95h-2V3.5h2zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79zM20 10.5v2h3v-2zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41z"/>
       </svg>
     ),
   },

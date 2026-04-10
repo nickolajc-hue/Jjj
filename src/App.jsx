@@ -16,7 +16,7 @@ export default function App() {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh' }}>
         <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <Routes>
-            <Route path="/" element={<Navigate to="/min-dag" replace />} />
+            <Route path="/" element={<Navigate to="/overblik" replace />} />
             <Route path="/min-dag" element={<MinDag />} />
             <Route path="/overblik" element={<Dashboard />} />
             <Route path="/kunder" element={<Customers />} />
