@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
+import CalendarPicker from '../components/CalendarPicker.jsx';
 
 const fld = {
   display: 'flex', alignItems: 'center', background: '#fff',
@@ -33,10 +34,8 @@ export default function AddEditAppointment() {
   const [recurrenceInterval, setRecurrenceInterval] = useState('2'); // antal uger ved 'custom'
 
   const tomorrow = new Date(Date.now() + 86400000);
-  const pad = n => String(n).padStart(2, '0');
-  const [day, setDay] = useState(pad(tomorrow.getDate()));
-  const [month, setMonth] = useState(pad(tomorrow.getMonth() + 1));
-  const [year, setYear] = useState(String(tomorrow.getFullYear()));
+  tomorrow.setHours(0, 0, 0, 0);
+  const [selectedDate, setSelectedDate] = useState(tomorrow);
 
   useEffect(() => {
     setCustomers(getCustomers());
@@ -50,9 +49,8 @@ export default function AddEditAppointment() {
         setRecurrence(a.recurrence || 'none');
         setRecurrenceInterval(String(a.recurrenceInterval || 2));
         const d = new Date(a.date);
-        setDay(pad(d.getDate()));
-        setMonth(pad(d.getMonth() + 1));
-        setYear(String(d.getFullYear()));
+        d.setHours(0, 0, 0, 0);
+        setSelectedDate(d);
       }
     }
   }, [id]);
@@ -62,8 +60,8 @@ export default function AddEditAppointment() {
   const save = () => {
     if (!title.trim()) { alert('Aftaletitel er påkrævet.'); return; }
     if (!customerId)   { alert('Vælg en kunde til aftalen.'); return; }
-    const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    if (isNaN(dateObj.getTime())) { alert('Ugyldig dato.'); return; }
+    const dateObj = selectedDate;
+    if (!dateObj || isNaN(dateObj.getTime())) { alert('Ugyldig dato.'); return; }
 
     const payload = {
       title,
@@ -83,17 +81,6 @@ export default function AddEditAppointment() {
     }
     navigate(-1);
   };
-
-  const DtCell = ({ label, value, onChange, maxLen }) => (
-    <div style={{ textAlign: 'center', flex: 1 }}>
-      <div style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
-      <input
-        style={{ fontSize: 22, fontWeight: 700, textAlign: 'center', width: '100%', background: 'transparent' }}
-        value={value} onChange={e => onChange(e.target.value)}
-        inputMode="numeric" maxLength={maxLen}
-      />
-    </div>
-  );
 
   // Kundepicker renderes via Portal for at undgå iOS Safari fixed-position bug
   const picker = showPicker && createPortal(
@@ -158,13 +145,7 @@ export default function AddEditAppointment() {
 
         {/* Dato */}
         <label style={lbl}>Dato</label>
-        <div style={{ ...fld, paddingTop: 8, paddingBottom: 8 }}>
-          <DtCell label="Dag"   value={day}   onChange={setDay}   maxLen={2} />
-          <span style={{ color: '#D1D5DB', fontSize: 22 }}>/</span>
-          <DtCell label="Måned" value={month} onChange={setMonth} maxLen={2} />
-          <span style={{ color: '#D1D5DB', fontSize: 22 }}>/</span>
-          <DtCell label="År"    value={year}  onChange={setYear}  maxLen={4} />
-        </div>
+        <CalendarPicker value={selectedDate} onChange={setSelectedDate} />
 
         {/* Varighed */}
         <label style={lbl}>Opgavens varighed</label>

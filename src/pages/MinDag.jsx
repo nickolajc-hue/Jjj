@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { getAppointments, getCustomers, occursOnDate, formatDuration, formatRecurrence } from '../storage.js';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { getAppointments, getCustomers, occursOnDate, formatDuration, formatRecurrence, getDayRecords, saveDayRecords, getDayKey } from '../storage.js';
 
 const HOME_KEY = 'kundeapp_home_address';
 const DEFAULT_HOME = 'Æblerosevej 8, 9430 Vadum';
@@ -195,6 +195,13 @@ export default function MinDag() {
   );
 }
 
+// ── Hjælpefunktion: format sekunder som MM:SS ──────────────────────────────
+function fmtTimer(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
 // ── Aftale-kort ────────────────────────────────────────────────────────────
 function AppCard({ appt, index, isFirst, isLast }) {
   const addr = appt.customer?.address;
@@ -202,17 +209,67 @@ function AppCard({ appt, index, isFirst, isLast }) {
     ? `https://maps.apple.com/?daddr=${encodeURIComponent(addr)}&dirflg=d`
     : null;
 
+  const today = new Date();
+  const dayKey = getDayKey(appt.id, today);
+
+  // Hent gemt tilstand
+  const [completed, setCompleted] = useState(() => {
+    const rec = getDayRecords()[dayKey];
+    return rec?.completed || false;
+  });
+  const [timerSeconds, setTimerSeconds] = useState(() => {
+    const rec = getDayRecords()[dayKey];
+    return rec?.timerSeconds || 0;
+  });
+  const [timerRunning, setTimerRunning] = useState(false);
+  const intervalRef = useRef(null);
+  const startTimeRef = useRef(null);
+
+  useEffect(() => () => clearInterval(intervalRef.current), []);
+
+  const toggleComplete = () => {
+    const newVal = !completed;
+    setCompleted(newVal);
+    const records = getDayRecords();
+    saveDayRecords({ ...records, [dayKey]: { ...records[dayKey], completed: newVal } });
+  };
+
+  const startTimer = () => {
+    startTimeRef.current = Date.now() - timerSeconds * 1000;
+    setTimerRunning(true);
+    intervalRef.current = setInterval(() => {
+      setTimerSeconds(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+  };
+
+  const stopTimer = () => {
+    clearInterval(intervalRef.current);
+    setTimerRunning(false);
+    const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+    setTimerSeconds(elapsed);
+    const records = getDayRecords();
+    saveDayRecords({ ...records, [dayKey]: { ...records[dayKey], timerSeconds: elapsed } });
+  };
+
+  const resetTimer = () => {
+    clearInterval(intervalRef.current);
+    setTimerRunning(false);
+    setTimerSeconds(0);
+    const records = getDayRecords();
+    saveDayRecords({ ...records, [dayKey]: { ...records[dayKey], timerSeconds: 0 } });
+  };
+
   return (
     <div style={{ display: 'flex', gap: 12, marginBottom: 0 }}>
       {/* Tidslinje */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 36, flexShrink: 0 }}>
         <div style={{
           width: 36, height: 36, borderRadius: 18,
-          background: '#2563EB', color: '#fff',
+          background: completed ? '#10B981' : '#2563EB', color: '#fff',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 15, fontWeight: 800, flexShrink: 0, zIndex: 1,
+          fontSize: completed ? 20 : 15, fontWeight: 800, flexShrink: 0, zIndex: 1,
         }}>
-          {index + 1}
+          {completed ? '✓' : index + 1}
         </div>
         {!isLast && (
           <div style={{ width: 2, flex: 1, background: '#E5E7EB', margin: '4px 0', minHeight: 20 }} />
@@ -220,7 +277,12 @@ function AppCard({ appt, index, isFirst, isLast }) {
       </div>
 
       {/* Kortindhold */}
-      <div style={{ flex: 1, background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+      <div style={{
+        flex: 1, background: completed ? '#F0FDF4' : '#fff',
+        borderRadius: 14, padding: 14, marginBottom: 10,
+        boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
+        opacity: completed ? 0.85 : 1,
+      }}>
         {/* Afstand fra forrige */}
         {appt.distFromPrev != null && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#F0FDF4', borderRadius: 8, padding: '3px 10px', marginBottom: 10 }}>
@@ -232,7 +294,7 @@ function AppCard({ appt, index, isFirst, isLast }) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-          <div style={{ fontWeight: 700, fontSize: 16, color: '#111827', flex: 1 }}>{appt.title}</div>
+          <div style={{ fontWeight: 700, fontSize: 16, color: completed ? '#6B7280' : '#111827', flex: 1, textDecoration: completed ? 'line-through' : 'none' }}>{appt.title}</div>
           {appt.duration > 0 && (
             <div style={{ background: '#F0FDF4', color: '#10B981', fontSize: 13, fontWeight: 700, borderRadius: 8, padding: '3px 8px', flexShrink: 0 }}>
               ⏱ {formatDuration(appt.duration)}
@@ -266,18 +328,57 @@ function AppCard({ appt, index, isFirst, isLast }) {
           </div>
         )}
 
-        {mapsUrl && (
-          <a
-            href={mapsUrl}
+        {/* Stopur */}
+        <div style={{ marginTop: 12, background: '#F9FAFB', borderRadius: 10, padding: '10px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: timerRunning ? '#2563EB' : '#374151', fontVariantNumeric: 'tabular-nums', letterSpacing: 1 }}>
+              {fmtTimer(timerSeconds)}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {timerRunning ? (
+                <button onClick={stopTimer} style={{ background: '#FEF3C7', color: '#D97706', borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 700 }}>
+                  ⏸ Stop
+                </button>
+              ) : (
+                <button onClick={startTimer} style={{ background: '#EFF6FF', color: '#2563EB', borderRadius: 8, padding: '6px 12px', fontSize: 13, fontWeight: 700 }}>
+                  ▶ Start
+                </button>
+              )}
+              {timerSeconds > 0 && !timerRunning && (
+                <button onClick={resetTimer} style={{ background: '#FEE2E2', color: '#EF4444', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 700 }}>
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Knapper: naviger + gennemfør */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          {mapsUrl && (
+            <a
+              href={mapsUrl}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: '#2563EB', color: '#fff', borderRadius: 10,
+                padding: '9px 16px', fontSize: 13, fontWeight: 700, textDecoration: 'none',
+              }}
+            >
+              🧭 Naviger
+            </a>
+          )}
+          <button
+            onClick={toggleComplete}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12,
-              background: '#2563EB', color: '#fff', borderRadius: 10,
-              padding: '9px 16px', fontSize: 13, fontWeight: 700, textDecoration: 'none',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: completed ? '#10B981' : '#F0FDF4',
+              color: completed ? '#fff' : '#10B981',
+              borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 700,
             }}
           >
-            🧭 Naviger
-          </a>
-        )}
+            {completed ? '✓ Gennemført' : '○ Marker færdig'}
+          </button>
+        </div>
       </div>
     </div>
   );

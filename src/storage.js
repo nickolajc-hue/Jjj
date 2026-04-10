@@ -1,5 +1,6 @@
 const CUSTOMERS_KEY = 'kundeapp_customers';
 const APPOINTMENTS_KEY = 'kundeapp_appointments';
+const DAY_RECORDS_KEY = 'kundeapp_day_records';
 
 export function getCustomers() {
   try { return JSON.parse(localStorage.getItem(CUSTOMERS_KEY) || '[]'); }
@@ -17,6 +18,17 @@ export function saveAppointments(a) {
 }
 export function newId() {
   return crypto.randomUUID();
+}
+export function getDayRecords() {
+  try { return JSON.parse(localStorage.getItem(DAY_RECORDS_KEY) || '{}'); }
+  catch { return {}; }
+}
+export function saveDayRecords(r) {
+  localStorage.setItem(DAY_RECORDS_KEY, JSON.stringify(r));
+}
+export function getDayKey(appointmentId, date) {
+  const d = new Date(date);
+  return `${appointmentId}_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export const RECURRENCE_LABELS = {
