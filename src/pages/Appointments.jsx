@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAppointments, saveAppointments, getCustomers, formatDuration, RECURRENCE_LABELS, nextOccurrence } from '../storage.js';
+import { getAppointments, saveAppointments, getCustomers, formatDuration, formatRecurrence, nextOccurrence } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 
 const RECURRENCE_ICONS = { daily: '🔁', weekly: '🔁', biweekly: '🔁', monthly: '🔁' };
@@ -62,7 +62,7 @@ export default function Appointments() {
             {sec.data.map(a => {
               const d = a.nextDate;
               const isPast = sec.title === 'Tidligere';
-              const hasRecurrence = a.recurrence && a.recurrence !== 'none';
+              const hasRecurrence = !!(a.recurrence && a.recurrence !== 'none' && formatRecurrence(a));
               return (
                 <div key={a.id} onClick={() => navigate(`/aftaler/${a.id}/rediger`)}
                   style={{ display: 'flex', alignItems: 'flex-start', background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, boxShadow: '0 1px 6px rgba(0,0,0,0.06)', opacity: isPast ? 0.7 : 1, gap: 12, cursor: 'pointer' }}>
@@ -84,7 +84,7 @@ export default function Appointments() {
                       )}
                       {hasRecurrence && (
                         <span style={{ background: '#FFF7ED', color: '#F59E0B', fontSize: 12, fontWeight: 700, borderRadius: 8, padding: '2px 8px' }}>
-                          🔁 {RECURRENCE_LABELS[a.recurrence]}
+                          🔁 {formatRecurrence(a)}
                         </span>
                       )}
                     </div>

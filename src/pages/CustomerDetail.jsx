@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getCustomers, getAppointments, formatDuration, RECURRENCE_LABELS, nextOccurrence } from '../storage.js';
+import { getCustomers, getAppointments, formatDuration, formatRecurrence, nextOccurrence } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 
 function formatDate(iso) {
@@ -101,7 +101,7 @@ export default function CustomerDetail() {
               <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{formatDate(nextOccurrence(a).toISOString())}</div>
               <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                 {a.duration > 0 && <span style={{ background: '#D1FAE5', color: '#059669', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px' }}>⏱ {formatDuration(a.duration)}</span>}
-                {a.recurrence && a.recurrence !== 'none' && <span style={{ background: '#FEF3C7', color: '#D97706', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px' }}>🔁 {RECURRENCE_LABELS[a.recurrence]}</span>}
+                {formatRecurrence(a) && <span style={{ background: '#FEF3C7', color: '#D97706', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px' }}>🔁 {formatRecurrence(a)}</span>}
               </div>
               {a.notes && <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>{a.notes}</div>}
             </div>

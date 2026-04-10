@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getAppointments, getCustomers, occursOnDate, formatDuration, RECURRENCE_LABELS } from '../storage.js';
+import { getAppointments, getCustomers, occursOnDate, formatDuration, formatRecurrence } from '../storage.js';
 
 const HOME_KEY = 'kundeapp_home_address';
 const DEFAULT_HOME = 'Æblerosevej 8, 9430 Vadum';
@@ -239,9 +239,9 @@ function AppCard({ appt, index, isFirst, isLast }) {
             </div>
           )}
         </div>
-        {appt.recurrence && appt.recurrence !== 'none' && (
+        {formatRecurrence(appt) && (
           <div style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600, marginTop: 2 }}>
-            🔁 {RECURRENCE_LABELS[appt.recurrence]}
+            🔁 {formatRecurrence(appt)}
           </div>
         )}
 
