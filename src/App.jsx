@@ -8,6 +8,7 @@ import AddEditCustomer from './pages/AddEditCustomer.jsx';
 import Appointments from './pages/Appointments.jsx';
 import AddEditAppointment from './pages/AddEditAppointment.jsx';
 import Tilbud from './pages/Tilbud.jsx';
+import MinDag from './pages/MinDag.jsx';
 
 export default function App() {
   return (
@@ -15,7 +16,8 @@ export default function App() {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh' }}>
         <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <Routes>
-            <Route path="/" element={<Navigate to="/overblik" replace />} />
+            <Route path="/" element={<Navigate to="/min-dag" replace />} />
+            <Route path="/min-dag" element={<MinDag />} />
             <Route path="/overblik" element={<Dashboard />} />
             <Route path="/kunder" element={<Customers />} />
             <Route path="/kunder/ny" element={<AddEditCustomer />} />
