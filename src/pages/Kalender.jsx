@@ -5,11 +5,26 @@ import {
   getAppointments, getCustomers, occursOnDate,
   getApptColor, formatDuration,
   getOffDays, saveOffDays,
+  getWorkHours, saveWorkHours,
   toDateStr,
 } from '../storage.js';
 
 const MÅNEDER = ['Januar','Februar','Marts','April','Maj','Juni','Juli','August','September','Oktober','November','December'];
 const UGEDAGE = ['Ma','Ti','On','To','Fr','Lø','Sø'];
+const WH_PRESETS = [
+  { label: '4t',   min: 240 },
+  { label: '6t',   min: 360 },
+  { label: '7t',   min: 420 },
+  { label: '8t',   min: 480 },
+  { label: '9t',   min: 540 },
+  { label: '10t',  min: 600 },
+];
+
+function capColor(pct) {
+  if (pct >= 100) return '#EF4444';
+  if (pct >= 70)  return '#F59E0B';
+  return '#10B981';
+}
 
 export default function Kalender() {
   const navigate = useNavigate();
@@ -18,11 +33,13 @@ export default function Kalender() {
   const [viewYear,  setViewYear]  = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [offDays,   setOffDays]   = useState(() => getOffDays());
+  const [workHours, setWorkHours] = useState(() => getWorkHours());
   const [apptsByDay, setApptsByDay] = useState({});
-  const [custMap,   setCustMap]   = useState({});
+  const [custMap,    setCustMap]   = useState({});
   const [selectedDay, setSelectedDay] = useState(null);
+  const [editWH,    setEditWH]    = useState(false);
+  const [whInput,   setWhInput]   = useState('');
 
-  // Genindlæs aftaler for den viste måned
   useEffect(() => {
     const allAppts = getAppointments();
     const custs    = getCustomers();
@@ -54,17 +71,30 @@ export default function Kalender() {
     saveOffDays(next);
   };
 
-  // Byg celle-array (mandag-start)
+  const saveWH = (min) => {
+    setWorkHours(min);
+    saveWorkHours(min);
+    setEditWH(false);
+  };
+
+  const saveCustomWH = () => {
+    const h = parseFloat(whInput.replace(',', '.'));
+    if (!isNaN(h) && h > 0) saveWH(Math.round(h * 60));
+  };
+
   const firstDow  = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
   const daysInMon = new Date(viewYear, viewMonth + 1, 0).getDate();
   const cells     = [...Array(firstDow).fill(null)];
   for (let d = 1; d <= daysInMon; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const selStr      = selectedDay ? toDateStr(selectedDay) : null;
-  const selAppts    = selStr ? (apptsByDay[selStr] || []) : [];
-  const selIsOff    = selStr ? offDays.has(selStr) : false;
-  const selIsToday  = selectedDay && selectedDay.getTime() === today.getTime();
+  const selStr    = selectedDay ? toDateStr(selectedDay) : null;
+  const selAppts  = selStr ? (apptsByDay[selStr] || []) : [];
+  const selIsOff  = selStr ? offDays.has(selStr) : false;
+  const selIsToday = selectedDay && selectedDay.getTime() === today.getTime();
+  const selTotalMin = selAppts.reduce((s, a) => s + (a.duration || 0), 0);
+  const selRemMin   = workHours - selTotalMin;
+  const selPct      = workHours > 0 ? Math.min(100, Math.round(selTotalMin / workHours * 100)) : 0;
 
   return (
     <div style={{ paddingBottom: 32, minHeight: '100%', background: '#F9FAFB' }}>
@@ -81,9 +111,55 @@ export default function Kalender() {
         </div>
       </div>
 
-      {/* Kalender */}
-      <div style={{ margin: '12px 10px 0', background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
+      {/* Arbejdstid-indstilling */}
+      <div style={{ margin: '12px 10px 0', background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 18 }}>⏰</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>Planlagt arbejdstid</div>
+              <div style={{ fontSize: 12, color: '#9CA3AF' }}>
+                {workHours > 0 ? `${workHours / 60 % 1 === 0 ? workHours / 60 : (workHours / 60).toFixed(1)} timer pr. dag` : 'Ikke sat'}
+              </div>
+            </div>
+          </div>
+          <button onClick={() => { setWhInput(''); setEditWH(v => !v); }} style={{
+            background: editWH ? '#F3F4F6' : '#EFF6FF', color: editWH ? '#6B7280' : '#2563EB',
+            borderRadius: 20, padding: '6px 14px', fontSize: 13, fontWeight: 700,
+          }}>
+            {editWH ? 'Luk' : 'Skift'}
+          </button>
+        </div>
+        {editWH && (
+          <div style={{ padding: '0 14px 14px', borderTop: '1px solid #F3F4F6' }}>
+            <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 8, marginTop: 10 }}>Vælg antal timer du normalt arbejder pr. dag:</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {WH_PRESETS.map(p => (
+                <button key={p.min} onClick={() => saveWH(p.min)} style={{
+                  borderRadius: 20, padding: '7px 16px', fontSize: 14, fontWeight: 700,
+                  background: workHours === p.min ? '#2563EB' : '#F3F4F6',
+                  color: workHours === p.min ? '#fff' : '#374151',
+                }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="number" inputMode="decimal" placeholder="F.eks. 7.5"
+                value={whInput} onChange={e => setWhInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && saveCustomWH()}
+                style={{ flex: 1, fontSize: 15, borderBottom: '2px solid #2563EB', paddingBottom: 4, color: '#111827' }}
+              />
+              <span style={{ fontSize: 13, color: '#6B7280' }}>timer</span>
+              <button onClick={saveCustomWH} style={{ background: '#2563EB', color: '#fff', borderRadius: 10, padding: '7px 14px', fontSize: 13, fontWeight: 700 }}>Gem</button>
+            </div>
+          </div>
+        )}
+      </div>
 
+      {/* Kalender-grid */}
+      <div style={{ margin: '10px 10px 0', background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
         {/* Ugedage-header */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: '#F3F4F6', borderBottom: '1px solid #E5E7EB' }}>
           {UGEDAGE.map((d, i) => (
@@ -93,63 +169,65 @@ export default function Kalender() {
           ))}
         </div>
 
-        {/* Dage-grid */}
+        {/* Dage */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
           {cells.map((day, i) => {
             const borderR = (i + 1) % 7 !== 0 ? '1px solid #F3F4F6' : 'none';
             if (!day) return (
-              <div key={`e${i}`} style={{ minHeight: 58, borderBottom: '1px solid #F3F4F6', borderRight: borderR, background: '#FAFAFA' }} />
+              <div key={`e${i}`} style={{ minHeight: 62, borderBottom: '1px solid #F3F4F6', borderRight: borderR, background: '#FAFAFA' }} />
             );
 
-            const d    = new Date(viewYear, viewMonth, day);
-            const dStr = toDateStr(d);
+            const d      = new Date(viewYear, viewMonth, day);
+            const dStr   = toDateStr(d);
             const isToday = d.getTime() === today.getTime();
-            const isSun   = d.getDay() === 0;
-            const isSel   = selectedDay && d.getTime() === selectedDay.getTime();
-            const isOff   = offDays.has(dStr);
+            const isSun  = d.getDay() === 0;
+            const isSel  = selectedDay && d.getTime() === selectedDay.getTime();
+            const isOff  = offDays.has(dStr);
             const dayAppts = apptsByDay[dStr] || [];
-            const isPast  = d < today;
+            const isPast = d < today;
+            const totalMin = dayAppts.reduce((s, a) => s + (a.duration || 0), 0);
+            const pct    = workHours > 0 && totalMin > 0 ? Math.min(100, Math.round(totalMin / workHours * 100)) : 0;
 
             return (
               <div key={day}
                 onClick={() => setSelectedDay(isSel ? null : d)}
                 style={{
-                  minHeight: 58, padding: '5px 3px 4px', cursor: 'pointer',
+                  minHeight: 62, padding: '5px 3px 0', cursor: 'pointer',
                   background: isOff ? '#FFF1F2' : isSel ? '#EFF6FF' : '#fff',
-                  borderBottom: '1px solid #F3F4F6',
-                  borderRight: borderR,
-                  opacity: isPast && !isToday ? 0.55 : 1,
+                  borderBottom: '1px solid #F3F4F6', borderRight: borderR,
+                  opacity: isPast && !isToday ? 0.5 : 1,
+                  display: 'flex', flexDirection: 'column',
                 }}
               >
                 {/* Dato-cirkel */}
                 <div style={{
-                  width: 26, height: 26, borderRadius: '50%',
-                  margin: '0 auto 3px',
+                  width: 26, height: 26, borderRadius: '50%', margin: '0 auto 2px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: isToday ? '#2563EB' : isSel ? '#DBEAFE' : 'transparent',
-                  fontSize: 13,
-                  fontWeight: isToday ? 800 : isSel ? 700 : 400,
+                  fontSize: 13, fontWeight: isToday ? 800 : isSel ? 700 : 400,
                   color: isToday ? '#fff' : isSun ? '#EF4444' : isOff ? '#EF4444' : '#374151',
                 }}>
                   {day}
                 </div>
 
-                {/* Fri-badge */}
                 {isOff && (
-                  <div style={{ textAlign: 'center', fontSize: 9, fontWeight: 700, color: '#EF4444', letterSpacing: 0.2 }}>
-                    FRI
-                  </div>
+                  <div style={{ textAlign: 'center', fontSize: 9, fontWeight: 700, color: '#EF4444', letterSpacing: 0.2 }}>FRI</div>
                 )}
 
-                {/* Aftale-dots */}
                 {!isOff && dayAppts.length > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap', paddingTop: isOff ? 0 : 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap', paddingBottom: 3 }}>
                     {dayAppts.slice(0, 3).map(a => (
                       <div key={a.id} style={{ width: 6, height: 6, borderRadius: '50%', background: getApptColor(a), flexShrink: 0 }} />
                     ))}
-                    {dayAppts.length > 3 && (
-                      <span style={{ fontSize: 8, color: '#6B7280', lineHeight: '6px' }}>+{dayAppts.length - 3}</span>
-                    )}
+                    {dayAppts.length > 3 && <span style={{ fontSize: 8, color: '#6B7280', lineHeight: '6px' }}>+{dayAppts.length - 3}</span>}
+                  </div>
+                )}
+
+                {/* Kapacitetsbar */}
+                <div style={{ flex: 1 }} />
+                {pct > 0 && (
+                  <div style={{ height: 3, background: '#F3F4F6' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: capColor(pct) }} />
                   </div>
                 )}
               </div>
@@ -159,20 +237,25 @@ export default function Kalender() {
       </div>
 
       {/* Forklaring */}
-      <div style={{ display: 'flex', gap: 16, padding: '10px 14px 4px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#6B7280' }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#2563EB' }} />
-          Aftale
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#6B7280' }}>
-          <div style={{ width: 8, height: 8, borderRadius: 2, background: '#FFF1F2', border: '1px solid #EF4444' }} />
-          Fri dag
-        </div>
-        <div style={{ fontSize: 11, color: '#9CA3AF' }}>Tryk på en dag for detaljer</div>
+      <div style={{ display: 'flex', gap: 14, padding: '10px 14px 4px', flexWrap: 'wrap' }}>
+        {[
+          { color: '#2563EB', shape: 'circle', label: 'Aftale' },
+          { color: '#FFF1F2', border: '#EF4444', shape: 'rect', label: 'Fri dag' },
+          { color: '#10B981', shape: 'bar', label: '<70%' },
+          { color: '#F59E0B', shape: 'bar', label: '70-99%' },
+          { color: '#EF4444', shape: 'bar', label: '100%+' },
+        ].map(it => (
+          <div key={it.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#6B7280' }}>
+            {it.shape === 'circle' && <div style={{ width: 8, height: 8, borderRadius: '50%', background: it.color }} />}
+            {it.shape === 'rect'   && <div style={{ width: 10, height: 10, borderRadius: 2, background: it.color, border: `1px solid ${it.border}` }} />}
+            {it.shape === 'bar'    && <div style={{ width: 14, height: 4, borderRadius: 2, background: it.color }} />}
+            {it.label}
+          </div>
+        ))}
       </div>
 
       {/* Tilføj-knap */}
-      <div style={{ padding: '8px 12px 0' }}>
+      <div style={{ padding: '6px 12px 0' }}>
         <button onClick={() => navigate('/aftaler/ny')} style={{
           width: '100%', background: '#2563EB', color: '#fff', borderRadius: 14,
           padding: '14px 0', fontSize: 16, fontWeight: 700,
@@ -207,23 +290,39 @@ export default function Kalender() {
 
             <div style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '14px 16px 32px' }}>
 
+              {/* Kapacitetsindikator */}
+              {workHours > 0 && !selIsOff && (
+                <div style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>⏱ Kapacitet</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: capColor(selPct) }}>
+                      {selPct}% brugt
+                    </span>
+                  </div>
+                  <div style={{ background: '#F3F4F6', borderRadius: 99, height: 8, overflow: 'hidden', marginBottom: 6 }}>
+                    <div style={{ height: '100%', width: `${selPct}%`, background: capColor(selPct), borderRadius: 99, transition: 'width 0.3s' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6B7280' }}>
+                    <span>{formatDuration(selTotalMin)} planlagt</span>
+                    <span style={{ color: selRemMin >= 0 ? '#10B981' : '#EF4444', fontWeight: 700 }}>
+                      {selRemMin >= 0 ? `${formatDuration(selRemMin)} ledig` : `${formatDuration(-selRemMin)} overtid`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Fri-dag-toggle */}
-              <button
-                onClick={() => toggleOff(selStr)}
-                style={{
-                  width: '100%', marginBottom: 14, borderRadius: 12, padding: '12px 16px',
-                  background: selIsOff ? '#FEE2E2' : '#F9FAFB',
-                  border: `2px solid ${selIsOff ? '#EF4444' : '#E5E7EB'}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                }}
-              >
+              <button onClick={() => toggleOff(selStr)} style={{
+                width: '100%', marginBottom: 14, borderRadius: 12, padding: '12px 16px',
+                background: selIsOff ? '#FEE2E2' : '#F9FAFB',
+                border: `2px solid ${selIsOff ? '#EF4444' : '#E5E7EB'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
                 <div style={{ textAlign: 'left' }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: selIsOff ? '#EF4444' : '#374151' }}>
                     {selIsOff ? '🔴 Fri dag (fjern markering)' : '⚪ Marker som fri dag'}
                   </div>
-                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>
-                    {selIsOff ? 'Tryk for at fjerne fri dag' : 'Dage du ikke kan arbejde'}
-                  </div>
+                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>Dage du ikke kan arbejde</div>
                 </div>
                 <div style={{
                   width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
@@ -252,12 +351,8 @@ export default function Kalender() {
                           ? <div style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>👤 {cust.name}</div>
                           : !a.customerId && <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 2 }}>📋 Enkeltopgave</div>
                         }
-                        {a.duration > 0 && (
-                          <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginTop: 4 }}>⏱ {formatDuration(a.duration)}</div>
-                        )}
-                        {a.price > 0 && (
-                          <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginTop: 2 }}>💰 {a.price.toLocaleString('da-DK')} kr</div>
-                        )}
+                        {a.duration > 0 && <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginTop: 4 }}>⏱ {formatDuration(a.duration)}</div>}
+                        {a.price > 0    && <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginTop: 2 }}>💰 {a.price.toLocaleString('da-DK')} kr</div>}
                       </div>
                     );
                   })}

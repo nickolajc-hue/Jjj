@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration, EQUIPMENT_LIST, getCustomEquipment, saveCustomEquipment, APPOINTMENT_COLORS } from '../storage.js';
+import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration, EQUIPMENT_LIST, getCustomEquipment, saveCustomEquipment, APPOINTMENT_COLORS, getOffDays, getWorkHours, occursOnDate, toDateStr } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 import CalendarPicker from '../components/CalendarPicker.jsx';
 
@@ -46,6 +46,53 @@ export default function AddEditAppointment() {
     tomorrow.setHours(0, 0, 0, 0);
     return tomorrow;
   });
+
+  // Kalender-data: markedDates + offDays (beregnes én gang ved mount)
+  const [calMarked, setCalMarked] = useState(null);
+  const [calOff,    setCalOff]    = useState(null);
+  const [nextDayMsg, setNextDayMsg] = useState('');
+
+  useEffect(() => {
+    const allAppts = getAppointments();
+    const offD     = getOffDays();
+    setCalOff(offD);
+    const marked = new Set();
+    const start = new Date(); start.setHours(0,0,0,0);
+    const end   = new Date(start); end.setFullYear(end.getFullYear() + 1);
+    const d = new Date(start);
+    while (d <= end) {
+      if (allAppts.some(a => occursOnDate(a, d))) marked.add(toDateStr(d));
+      d.setDate(d.getDate() + 1);
+    }
+    setCalMarked(marked);
+  }, []);
+
+  // Find næste dag med tilstrækkelig kapacitet
+  const findNextAvailableDay = () => {
+    const dur      = parseInt(duration) || 60;
+    const allAppts = getAppointments();
+    const offD     = getOffDays();
+    const wh       = getWorkHours(); // minutter
+
+    const probe = new Date(); probe.setHours(0,0,0,0);
+    for (let i = 0; i < 365; i++) {
+      const dStr = toDateStr(probe);
+      if (!offD.has(dStr)) {
+        const dayMin = allAppts
+          .filter(a => occursOnDate(a, probe))
+          .reduce((s, a) => s + (a.duration || 0), 0);
+        if (wh <= 0 || dayMin + dur <= wh) {
+          const found = new Date(probe);
+          setSelectedDate(found);
+          setNextDayMsg(found.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' }));
+          setTimeout(() => setNextDayMsg(''), 3500);
+          return;
+        }
+      }
+      probe.setDate(probe.getDate() + 1);
+    }
+    alert('Ingen ledige dage fundet i det næste år.\nJuster din planlagte arbejdstid i Kalender-fanen.');
+  };
 
   useEffect(() => {
     setCustomers(getCustomers());
@@ -189,8 +236,22 @@ export default function AddEditAppointment() {
         </div>
 
         {/* Dato */}
-        <label style={lbl}>Dato</label>
-        <CalendarPicker value={selectedDate} onChange={setSelectedDate} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <label style={{ ...lbl, marginBottom: 0 }}>Dato</label>
+          <button onClick={findNextAvailableDay} style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            background: '#EFF6FF', color: '#2563EB', borderRadius: 20,
+            padding: '5px 12px', fontSize: 12, fontWeight: 700,
+          }}>
+            📅 Find næste ledige dag
+          </button>
+        </div>
+        {nextDayMsg ? (
+          <div style={{ background: '#F0FDF4', borderRadius: 10, padding: '8px 12px', marginBottom: 8, fontSize: 13, color: '#10B981', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+            ✓ Valgt: {nextDayMsg}
+          </div>
+        ) : null}
+        <CalendarPicker value={selectedDate} onChange={setSelectedDate} markedDates={calMarked} offDays={calOff} />
 
         {/* Varighed */}
         <label style={lbl}>Opgavens varighed</label>

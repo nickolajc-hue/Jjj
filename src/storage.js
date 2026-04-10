@@ -160,6 +160,15 @@ export function saveOffDays(setOrArray) {
   localStorage.setItem(OFF_DAYS_KEY, JSON.stringify([...setOrArray]));
 }
 
+const WORK_HOURS_KEY = 'kundeapp_work_hours';
+export function getWorkHours() {
+  const v = parseInt(localStorage.getItem(WORK_HOURS_KEY));
+  return isNaN(v) ? 480 : v; // default 8 timer = 480 min
+}
+export function saveWorkHours(minutes) {
+  localStorage.setItem(WORK_HOURS_KEY, String(parseInt(minutes) || 480));
+}
+
 export function nextOccurrence(appt) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
