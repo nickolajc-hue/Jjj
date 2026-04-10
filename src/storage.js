@@ -94,6 +94,13 @@ export function occursOnDate(appt, targetDate) {
   const t = new Date(target.getFullYear(), target.getMonth(), target.getDate());
 
   if (t < s) return false;
+
+  // Respekter slutdato
+  if (appt.recurrenceEndDate) {
+    const e = new Date(appt.recurrenceEndDate); e.setHours(0, 0, 0, 0);
+    if (t > e) return false;
+  }
+
   if (!appt.recurrence || appt.recurrence === 'none') return s.getTime() === t.getTime();
 
   const diffDays = Math.round((t - s) / 86400000);
@@ -121,34 +128,42 @@ export function nextOccurrence(appt) {
   if (start >= today) return start;
 
   const diff = Math.ceil((today - start) / 86400000);
+  let next;
   switch (appt.recurrence) {
-    case 'daily': return today;
+    case 'daily': next = today; break;
     case 'weekly': {
       const rem = diff % 7;
-      const d = new Date(today);
-      if (rem !== 0) d.setDate(d.getDate() + (7 - rem));
-      return d;
+      next = new Date(today);
+      if (rem !== 0) next.setDate(next.getDate() + (7 - rem));
+      break;
     }
     case 'biweekly': {
       const rem = diff % 14;
-      const d = new Date(today);
-      if (rem !== 0) d.setDate(d.getDate() + (14 - rem));
-      return d;
+      next = new Date(today);
+      if (rem !== 0) next.setDate(next.getDate() + (14 - rem));
+      break;
     }
     case 'monthly': {
-      const d = new Date(today);
-      d.setDate(start.getDate());
-      if (d < today) d.setMonth(d.getMonth() + 1);
-      return d;
+      next = new Date(today);
+      next.setDate(start.getDate());
+      if (next < today) next.setMonth(next.getMonth() + 1);
+      break;
     }
     case 'custom': {
       const weeks = Math.max(1, appt.recurrenceInterval || 1);
       const period = weeks * 7;
       const rem = diff % period;
-      const d = new Date(today);
-      if (rem !== 0) d.setDate(d.getDate() + (period - rem));
-      return d;
+      next = new Date(today);
+      if (rem !== 0) next.setDate(next.getDate() + (period - rem));
+      break;
     }
     default: return start;
   }
+
+  // Respekter slutdato
+  if (appt.recurrenceEndDate) {
+    const endD = new Date(appt.recurrenceEndDate); endD.setHours(0, 0, 0, 0);
+    if (next > endD) return endD;
+  }
+  return next;
 }

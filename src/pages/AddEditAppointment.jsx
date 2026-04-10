@@ -32,6 +32,7 @@ export default function AddEditAppointment() {
   const [duration, setDuration] = useState('60');
   const [recurrence, setRecurrence] = useState('none');
   const [recurrenceInterval, setRecurrenceInterval] = useState('2'); // antal uger ved 'custom'
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState(null);
   const [price, setPrice] = useState('');
   const [equipment, setEquipment] = useState([]);
   const [customEquipment, setCustomEquipment] = useState(() => getCustomEquipment());
@@ -57,6 +58,10 @@ export default function AddEditAppointment() {
         setSelectedDate(d);
         setPrice(a.price ? String(a.price) : '');
         setEquipment(a.equipment || []);
+        if (a.recurrenceEndDate) {
+          const ed = new Date(a.recurrenceEndDate); ed.setHours(0, 0, 0, 0);
+          setRecurrenceEndDate(ed);
+        }
       }
     }
   }, [id]);
@@ -77,6 +82,7 @@ export default function AddEditAppointment() {
       duration: parseInt(duration) || 60,
       recurrence,
       recurrenceInterval: recurrence === 'custom' ? (parseInt(recurrenceInterval) || 2) : null,
+      recurrenceEndDate: (recurrence !== 'none' && recurrenceEndDate) ? recurrenceEndDate.toISOString() : null,
       price: parseFloat(price) || 0,
       equipment,
     };
@@ -320,6 +326,30 @@ export default function AddEditAppointment() {
               <div style={{ textAlign: 'center', fontSize: 13, color: '#2563EB', fontWeight: 600, marginTop: 10 }}>
                 Gentages hver {recurrenceInterval}. uge
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Slutdato for gentagelse */}
+        {recurrence !== 'none' && (
+          <div style={{ marginBottom: 14, background: '#F9FAFB', borderRadius: 12, padding: '14px 16px', border: '1px solid #E5E7EB' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: recurrenceEndDate ? 12 : 0 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>Slutdato</div>
+                <div style={{ fontSize: 12, color: '#9CA3AF' }}>Hvornår stopper gentagelsen?</div>
+              </div>
+              <button onClick={() => setRecurrenceEndDate(v => v ? null : new Date(selectedDate.getTime() + 86400000 * 90))}
+                style={{ borderRadius: 20, padding: '6px 14px', fontSize: 13, fontWeight: 700, border: '2px solid', borderColor: recurrenceEndDate ? '#EF4444' : '#2563EB', background: recurrenceEndDate ? '#FEE2E2' : '#EFF6FF', color: recurrenceEndDate ? '#EF4444' : '#2563EB' }}>
+                {recurrenceEndDate ? '✕ Fjern' : '+ Tilføj'}
+              </button>
+            </div>
+            {recurrenceEndDate && (
+              <>
+                <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 8 }}>
+                  Stopper: <strong>{recurrenceEndDate.toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}</strong>
+                </div>
+                <CalendarPicker value={recurrenceEndDate} onChange={setRecurrenceEndDate} />
+              </>
             )}
           </div>
         )}
