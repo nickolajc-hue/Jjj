@@ -45,6 +45,8 @@ export default function Tilbud() {
   const [address, setAddress] = useState('');
   const [searching, setSearching] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsError, setGpsError] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [pointCount, setPointCount] = useState(0);
   const [area, setArea] = useState(null);
@@ -109,6 +111,29 @@ export default function Tilbud() {
     map.on('click', onClick);
     return () => map.off('click', onClick);
   }, [drawing]);
+
+  // ── GPS-lokation ─────────────────────────────────────────────────────────
+  const useGPS = () => {
+    if (!navigator.geolocation) return;
+    setGpsLoading(true); setGpsError(false); setNotFound(false);
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords: { latitude: lat, longitude: lng } }) => {
+        try {
+          mapRef.current?.setView([lat, lng], 19);
+          const res = await fetch(
+            `https://api.dataforsyningen.dk/adgangsadresser/reverse?x=${lng}&y=${lat}&format=json`
+          );
+          const d = await res.json();
+          if (d?.vejnavn) {
+            setAddress(`${d.vejnavn} ${d.husnr}, ${d.postnr} ${d.postnrnavn}`);
+          }
+        } catch {}
+        setGpsLoading(false);
+      },
+      () => { setGpsLoading(false); setGpsError(true); },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   // ── Adressesøgning ───────────────────────────────────────────────────────
   const searchAddress = async () => {
@@ -204,12 +229,18 @@ export default function Tilbud() {
               onKeyDown={e => e.key === 'Enter' && searchAddress()} />
             {address && <button onClick={() => setAddress('')} style={{ color: '#9CA3AF', fontSize: 18 }}>×</button>}
           </div>
+          <button onClick={useGPS} disabled={gpsLoading}
+            title="Brug min placering"
+            style={{ background: '#F0FDF4', color: '#10B981', borderRadius: 12, padding: '0 14px', fontSize: 20, flexShrink: 0, opacity: gpsLoading ? 0.6 : 1 }}>
+            {gpsLoading ? '⏳' : '🎯'}
+          </button>
           <button onClick={searchAddress} disabled={searching}
             style={{ background: '#2563EB', color: '#fff', borderRadius: 12, padding: '0 18px', fontSize: 14, fontWeight: 700, flexShrink: 0, opacity: searching ? 0.7 : 1 }}>
             {searching ? '...' : 'Find'}
           </button>
         </div>
         {notFound && <div style={{ color: '#EF4444', fontSize: 13, marginTop: 6 }}>Adressen blev ikke fundet.</div>}
+        {gpsError && <div style={{ color: '#EF4444', fontSize: 13, marginTop: 6 }}>GPS-adgang nægtet — tjek telefonens indstillinger.</div>}
       </div>
 
       {/* Kort */}
