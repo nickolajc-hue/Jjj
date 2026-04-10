@@ -9,6 +9,7 @@ import Appointments from './pages/Appointments.jsx';
 import AddEditAppointment from './pages/AddEditAppointment.jsx';
 import Tilbud from './pages/Tilbud.jsx';
 import MinDag from './pages/MinDag.jsx';
+import Kalender from './pages/Kalender.jsx';
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="/aftaler" element={<Appointments />} />
             <Route path="/aftaler/ny" element={<AddEditAppointment />} />
             <Route path="/aftaler/:id/rediger" element={<AddEditAppointment />} />
+            <Route path="/kalender" element={<Kalender />} />
             <Route path="/tilbud" element={<Tilbud />} />
           </Routes>
         </div>

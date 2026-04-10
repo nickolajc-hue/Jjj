@@ -3,7 +3,8 @@ import React, { useState } from 'react';
 const UGEDAGE = ['Ma', 'Ti', 'On', 'To', 'Fr', 'Lø', 'Sø'];
 const MÅNEDER = ['Januar','Februar','Marts','April','Maj','Juni','Juli','August','September','Oktober','November','December'];
 
-export default function CalendarPicker({ value, onChange }) {
+// markedDates: Set<"YYYY-MM-DD"> — dates that have appointments (shows a dot)
+export default function CalendarPicker({ value, onChange, markedDates }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const start = value || today;
   const [viewYear, setViewYear] = useState(start.getFullYear());
@@ -55,15 +56,25 @@ export default function CalendarPicker({ value, onChange }) {
           const isToday = d.getTime() === today.getTime();
           const isSel = selDate && d.getTime() === selDate.getTime();
           const isSun = new Date(viewYear, viewMonth, day).getDay() === 0;
+          const dStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const isMarked = markedDates && markedDates.has(dStr);
           return (
             <button key={day} onClick={() => onChange(d)} style={{
-              aspectRatio: '1', borderRadius: '50%', fontSize: 14,
+              aspectRatio: '1', borderRadius: '50%', fontSize: 13,
               fontWeight: isSel ? 800 : isToday ? 700 : 400,
               background: isSel ? '#2563EB' : isToday ? '#DBEAFE' : 'transparent',
               color: isSel ? '#fff' : isToday ? '#1D4ED8' : isSun ? '#EF4444' : '#374151',
-              border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              position: 'relative', gap: 1,
             }}>
-              {day}
+              <span style={{ lineHeight: 1 }}>{day}</span>
+              {isMarked && (
+                <div style={{
+                  width: 4, height: 4, borderRadius: '50%',
+                  background: isSel ? 'rgba(255,255,255,0.8)' : '#2563EB',
+                  flexShrink: 0,
+                }} />
+              )}
             </button>
           );
         })}

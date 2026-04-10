@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getAppointments, getCustomers, occursOnDate, formatDuration, formatRecurrence, getDayRecords, saveDayRecords, getDayKey, getApptColor, getApptPhotos, saveApptPhotos, newId } from '../storage.js';
+import { useLocation } from 'react-router-dom';
+import { getAppointments, getCustomers, occursOnDate, formatDuration, formatRecurrence, getDayRecords, saveDayRecords, getDayKey, getApptColor, getApptPhotos, saveApptPhotos, newId, toDateStr } from '../storage.js';
 import CalendarPicker from '../components/CalendarPicker.jsx';
 
 const HOME_KEY = 'kundeapp_home_address';
@@ -177,12 +178,16 @@ function DagsPlan({ appointments, totalKm, startTime, onStartTimeChange }) {
 
 // ── Hoved-komponent ────────────────────────────────────────────────────────
 export default function MinDag() {
+  const location = useLocation();
   const [homeAddress, setHomeAddress] = useState(() => localStorage.getItem(HOME_KEY) || DEFAULT_HOME);
   const [editingHome, setEditingHome] = useState(false);
   const [tempHome, setTempHome] = useState('');
   const [startTime, setStartTime] = useState(() => localStorage.getItem(STARTTIME_KEY) || '08:00');
 
   const [selectedDate, setSelectedDate] = useState(() => {
+    if (location.state?.date) {
+      const d = new Date(location.state.date); d.setHours(0,0,0,0); return d;
+    }
     const d = new Date(); d.setHours(0, 0, 0, 0); return d;
   });
   const [showCal, setShowCal] = useState(false);
@@ -250,6 +255,22 @@ export default function MinDag() {
     setEditingHome(false);
   };
 
+  // Beregn dage med aftaler (til kalender-dots)
+  const markedDates = useMemo(() => {
+    if (!showCal) return null;
+    const allAppts = getAppointments();
+    const marked = new Set();
+    // Tre måneder rundt om valgt dato
+    const start = new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1);
+    const end   = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 2, 0);
+    const d = new Date(start);
+    while (d <= end) {
+      if (allAppts.some(a => occursOnDate(a, d))) marked.add(toDateStr(d));
+      d.setDate(d.getDate() + 1);
+    }
+    return marked;
+  }, [showCal, selectedDate]);
+
   // Kalender-portal
   const calPortal = showCal && createPortal(
     <div onClick={e => { if (e.target === e.currentTarget) setShowCal(false); }}
@@ -259,7 +280,7 @@ export default function MinDag() {
           <span style={{ fontSize: 17, fontWeight: 700 }}>Vælg dato</span>
           <button onClick={() => setShowCal(false)} style={{ fontSize: 26, color: '#6B7280', lineHeight: 1 }}>×</button>
         </div>
-        <CalendarPicker value={selectedDate} onChange={d => { setSelectedDate(d); setShowCal(false); }} />
+        <CalendarPicker value={selectedDate} onChange={d => { setSelectedDate(d); setShowCal(false); }} markedDates={markedDates} />
       </div>
     </div>,
     document.body
@@ -477,9 +498,10 @@ function AppCard({ appt, index, isFirst, isLast, date }) {
         {formatRecurrence(appt) && (
           <div style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600, marginTop: 2 }}>🔁 {formatRecurrence(appt)}</div>
         )}
-        {appt.customer && (
-          <div style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>👤 {appt.customer.name}</div>
-        )}
+        {appt.customer
+          ? <div style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>👤 {appt.customer.name}</div>
+          : !appt.customerId && <div style={{ fontSize: 13, color: '#9CA3AF', marginTop: 4 }}>📋 Enkeltopgave</div>
+        }
         {appt.price > 0 && (
           <div style={{ fontSize: 13, color: '#10B981', fontWeight: 700, marginTop: 4 }}>💰 {appt.price.toLocaleString('da-DK')} kr</div>
         )}

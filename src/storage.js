@@ -146,6 +146,20 @@ export function occursOnDate(appt, targetDate) {
   }
 }
 
+export function toDateStr(date) {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const OFF_DAYS_KEY = 'kundeapp_off_days';
+export function getOffDays() {
+  try { return new Set(JSON.parse(localStorage.getItem(OFF_DAYS_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+export function saveOffDays(setOrArray) {
+  localStorage.setItem(OFF_DAYS_KEY, JSON.stringify([...setOrArray]));
+}
+
 export function nextOccurrence(appt) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);

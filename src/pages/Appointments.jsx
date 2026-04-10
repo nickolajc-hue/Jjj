@@ -19,7 +19,7 @@ export default function Appointments() {
 
     const enriched = appointments.map(a => ({
       ...a,
-      customerName: customerMap[a.customerId] || 'Ukendt kunde',
+      customerName: a.customerId ? (customerMap[a.customerId] || 'Ukendt kunde') : 'Enkeltopgave',
       nextDate: nextOccurrence(a),
     }));
 

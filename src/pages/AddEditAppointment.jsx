@@ -22,11 +22,11 @@ export default function AddEditAppointment() {
   const navigate = useNavigate();
   const location = useLocation();
   const isEditing = !!id;
-  const prefillCustomerId = location.state?.customerId || '';
+  const prefillCustomerId = location.state?.customerId ?? null;
 
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
-  const [customerId, setCustomerId] = useState(prefillCustomerId);
+  const [customerId, setCustomerId] = useState(prefillCustomerId); // null = ikke valgt, '' = ingen fast kunde
   const [customers, setCustomers] = useState([]);
   const [showPicker, setShowPicker] = useState(false);
   const [duration, setDuration] = useState('60');
@@ -39,9 +39,13 @@ export default function AddEditAppointment() {
   const [customEquipment, setCustomEquipment] = useState(() => getCustomEquipment());
   const [newEquipItem, setNewEquipItem] = useState('');
 
-  const tomorrow = new Date(Date.now() + 86400000);
-  tomorrow.setHours(0, 0, 0, 0);
-  const [selectedDate, setSelectedDate] = useState(tomorrow);
+  const prefillDate = location.state?.date;
+  const [selectedDate, setSelectedDate] = useState(() => {
+    if (prefillDate) { const d = new Date(prefillDate); d.setHours(0,0,0,0); return d; }
+    const tomorrow = new Date(Date.now() + 86400000);
+    tomorrow.setHours(0, 0, 0, 0);
+    return tomorrow;
+  });
 
   useEffect(() => {
     setCustomers(getCustomers());
@@ -50,7 +54,7 @@ export default function AddEditAppointment() {
       if (a) {
         setTitle(a.title || '');
         setNotes(a.notes || '');
-        setCustomerId(a.customerId || '');
+        setCustomerId(a.customerId ?? '');
         setColor(a.color || 'blue');
         setDuration(String(a.duration || 60));
         setRecurrence(a.recurrence || 'none');
@@ -72,7 +76,6 @@ export default function AddEditAppointment() {
 
   const save = () => {
     if (!title.trim()) { alert('Aftaletitel er påkrævet.'); return; }
-    if (!customerId)   { alert('Vælg en kunde til aftalen.'); return; }
     const dateObj = selectedDate;
     if (!dateObj || isNaN(dateObj.getTime())) { alert('Ugyldig dato.'); return; }
 
@@ -111,9 +114,19 @@ export default function AddEditAppointment() {
           <button onClick={() => setShowPicker(false)} style={{ fontSize: 26, color: '#6B7280', lineHeight: 1 }}>×</button>
         </div>
         <div style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          {customers.length === 0
-            ? <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF' }}>Ingen kunder oprettet endnu</div>
-            : customers.map(c => (
+            {/* Ingen fast kunde */}
+          <div onClick={() => { setCustomerId(''); setShowPicker(false); }}
+            style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #F3F4F6', gap: 12, background: customerId === '' ? '#F0FDF4' : '#F9FAFB' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 22, background: '#E5E7EB', color: '#6B7280', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+              📋
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 16, color: '#374151' }}>Ingen fast kunde</div>
+              <div style={{ fontSize: 13, color: '#9CA3AF' }}>Enkeltopgave uden tilknyttet kunde</div>
+            </div>
+            {customerId === '' && <span style={{ color: '#10B981', fontSize: 22 }}>✓</span>}
+          </div>
+          {customers.map(c => (
               <div key={c.id}
                 onClick={() => { setCustomerId(c.id); setShowPicker(false); }}
                 style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #F3F4F6', gap: 12, background: c.id === customerId ? '#EFF6FF' : '#fff' }}
@@ -127,8 +140,10 @@ export default function AddEditAppointment() {
                 </div>
                 {c.id === customerId && <span style={{ color: '#2563EB', fontSize: 22 }}>✓</span>}
               </div>
-            ))
-          }
+            ))}
+          {customers.length === 0 && (
+            <div style={{ padding: '16px 20px', fontSize: 13, color: '#9CA3AF' }}>Ingen kunder oprettet endnu</div>
+          )}
           {/* Ekstra luft i bunden så sidstes kunde ikke skjules bag hjem-bar */}
           <div style={{ height: 32 }} />
         </div>
@@ -164,11 +179,11 @@ export default function AddEditAppointment() {
         </div>
 
         {/* Kunde */}
-        <label style={lbl}>Kunde *</label>
+        <label style={lbl}>Kunde</label>
         <div style={{ ...fld, cursor: 'pointer' }} onClick={() => setShowPicker(true)}>
-          <span style={{ fontSize: 18 }}>👤</span>
-          <span style={{ flex: 1, fontSize: 16, color: selectedCustomer ? '#111827' : '#D1D5DB' }}>
-            {selectedCustomer ? selectedCustomer.name : 'Vælg kunde...'}
+          <span style={{ fontSize: 18 }}>{selectedCustomer ? '👤' : customerId === '' ? '📋' : '👤'}</span>
+          <span style={{ flex: 1, fontSize: 16, color: customerId === null ? '#D1D5DB' : '#111827' }}>
+            {selectedCustomer ? selectedCustomer.name : customerId === '' ? 'Ingen fast kunde' : 'Vælg kunde...'}
           </span>
           <span style={{ color: '#9CA3AF', fontSize: 18 }}>▾</span>
         </div>
