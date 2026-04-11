@@ -169,6 +169,15 @@ export function saveWorkHours(minutes) {
   localStorage.setItem(WORK_HOURS_KEY, String(parseInt(minutes) || 480));
 }
 
+const TRAVEL_TIME_KEY = 'kundeapp_travel_time';
+export function getTravelTime() {
+  const v = parseInt(localStorage.getItem(TRAVEL_TIME_KEY));
+  return isNaN(v) ? 0 : v; // default 0 = ikke sat
+}
+export function saveTravelTime(minutes) {
+  localStorage.setItem(TRAVEL_TIME_KEY, String(parseInt(minutes) || 0));
+}
+
 export function nextOccurrence(appt) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);

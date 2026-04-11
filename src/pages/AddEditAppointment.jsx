@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration, EQUIPMENT_LIST, getCustomEquipment, saveCustomEquipment, APPOINTMENT_COLORS, getOffDays, getWorkHours, occursOnDate, toDateStr } from '../storage.js';
+import { getAppointments, saveAppointments, getCustomers, newId, RECURRENCE_LABELS, formatDuration, EQUIPMENT_LIST, getCustomEquipment, saveCustomEquipment, APPOINTMENT_COLORS, getOffDays, getWorkHours, getTravelTime, occursOnDate, toDateStr } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 import CalendarPicker from '../components/CalendarPicker.jsx';
+import FullCalendarPicker from '../components/FullCalendarPicker.jsx';
 
 const fld = {
   display: 'flex', alignItems: 'center', background: '#fff',
@@ -47,41 +48,49 @@ export default function AddEditAppointment() {
     return tomorrow;
   });
 
-  // Kalender-data: markedDates + offDays (beregnes én gang ved mount)
-  const [calMarked, setCalMarked] = useState(null);
-  const [calOff,    setCalOff]    = useState(null);
+  // Kalender-data (beregnes én gang ved mount)
+  const [apptsByDay, setApptsByDay] = useState({});
+  const [calOff,     setCalOff]     = useState(null);
+  const [calWH,      setCalWH]      = useState(0);
+  const [calTravel,  setCalTravel]  = useState(0);
   const [nextDayMsg, setNextDayMsg] = useState('');
 
   useEffect(() => {
     const allAppts = getAppointments();
     const offD     = getOffDays();
     setCalOff(offD);
-    const marked = new Set();
+    setCalWH(getWorkHours());
+    setCalTravel(getTravelTime());
+
+    // Byg apptsByDay for de næste 12 måneder
+    const map = {};
     const start = new Date(); start.setHours(0,0,0,0);
     const end   = new Date(start); end.setFullYear(end.getFullYear() + 1);
     const d = new Date(start);
     while (d <= end) {
-      if (allAppts.some(a => occursOnDate(a, d))) marked.add(toDateStr(d));
+      const appts = allAppts.filter(a => occursOnDate(a, d));
+      if (appts.length > 0) map[toDateStr(d)] = appts;
       d.setDate(d.getDate() + 1);
     }
-    setCalMarked(marked);
+    setApptsByDay(map);
   }, []);
 
-  // Find næste dag med tilstrækkelig kapacitet
+  // Find næste dag med tilstrækkelig kapacitet (inkl. kørsel)
   const findNextAvailableDay = () => {
     const dur      = parseInt(duration) || 60;
     const allAppts = getAppointments();
     const offD     = getOffDays();
-    const wh       = getWorkHours(); // minutter
+    const wh       = getWorkHours();
+    const travel   = getTravelTime();
 
     const probe = new Date(); probe.setHours(0,0,0,0);
     for (let i = 0; i < 365; i++) {
       const dStr = toDateStr(probe);
       if (!offD.has(dStr)) {
-        const dayMin = allAppts
-          .filter(a => occursOnDate(a, probe))
-          .reduce((s, a) => s + (a.duration || 0), 0);
-        if (wh <= 0 || dayMin + dur <= wh) {
+        const dayAppts = allAppts.filter(a => occursOnDate(a, probe));
+        const dayMin   = dayAppts.reduce((s, a) => s + (a.duration || 0), 0)
+                       + dayAppts.length * travel;
+        if (wh <= 0 || dayMin + dur + travel <= wh) {
           const found = new Date(probe);
           setSelectedDate(found);
           setNextDayMsg(found.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' }));
@@ -251,7 +260,14 @@ export default function AddEditAppointment() {
             ✓ Valgt: {nextDayMsg}
           </div>
         ) : null}
-        <CalendarPicker value={selectedDate} onChange={setSelectedDate} markedDates={calMarked} offDays={calOff} />
+        <FullCalendarPicker
+          value={selectedDate}
+          onChange={setSelectedDate}
+          apptsByDay={apptsByDay}
+          offDays={calOff}
+          workHours={calWH}
+          travelTime={calTravel}
+        />
 
         {/* Varighed */}
         <label style={lbl}>Opgavens varighed</label>

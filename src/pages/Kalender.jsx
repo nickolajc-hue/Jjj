@@ -6,18 +6,27 @@ import {
   getApptColor, formatDuration,
   getOffDays, saveOffDays,
   getWorkHours, saveWorkHours,
+  getTravelTime, saveTravelTime,
   toDateStr,
 } from '../storage.js';
 
 const MÅNEDER = ['Januar','Februar','Marts','April','Maj','Juni','Juli','August','September','Oktober','November','December'];
 const UGEDAGE = ['Ma','Ti','On','To','Fr','Lø','Sø'];
 const WH_PRESETS = [
-  { label: '4t',   min: 240 },
-  { label: '6t',   min: 360 },
-  { label: '7t',   min: 420 },
-  { label: '8t',   min: 480 },
-  { label: '9t',   min: 540 },
-  { label: '10t',  min: 600 },
+  { label: '4t',  min: 240 },
+  { label: '6t',  min: 360 },
+  { label: '7t',  min: 420 },
+  { label: '8t',  min: 480 },
+  { label: '9t',  min: 540 },
+  { label: '10t', min: 600 },
+];
+const TT_PRESETS = [
+  { label: '10 min', min: 10 },
+  { label: '15 min', min: 15 },
+  { label: '20 min', min: 20 },
+  { label: '30 min', min: 30 },
+  { label: '45 min', min: 45 },
+  { label: '60 min', min: 60 },
 ];
 
 function capColor(pct) {
@@ -37,8 +46,11 @@ export default function Kalender() {
   const [apptsByDay, setApptsByDay] = useState({});
   const [custMap,    setCustMap]   = useState({});
   const [selectedDay, setSelectedDay] = useState(null);
+  const [travelTime, setTravelTime] = useState(() => getTravelTime());
   const [editWH,    setEditWH]    = useState(false);
   const [whInput,   setWhInput]   = useState('');
+  const [editTT,    setEditTT]    = useState(false);
+  const [ttInput,   setTtInput]   = useState('');
 
   useEffect(() => {
     const allAppts = getAppointments();
@@ -76,10 +88,19 @@ export default function Kalender() {
     saveWorkHours(min);
     setEditWH(false);
   };
-
   const saveCustomWH = () => {
     const h = parseFloat(whInput.replace(',', '.'));
     if (!isNaN(h) && h > 0) saveWH(Math.round(h * 60));
+  };
+
+  const saveTT = (min) => {
+    setTravelTime(min);
+    saveTravelTime(min);
+    setEditTT(false);
+  };
+  const saveCustomTT = () => {
+    const m = parseInt(ttInput);
+    if (!isNaN(m) && m >= 0) saveTT(m);
   };
 
   const firstDow  = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
@@ -92,7 +113,9 @@ export default function Kalender() {
   const selAppts  = selStr ? (apptsByDay[selStr] || []) : [];
   const selIsOff  = selStr ? offDays.has(selStr) : false;
   const selIsToday = selectedDay && selectedDay.getTime() === today.getTime();
-  const selTotalMin = selAppts.reduce((s, a) => s + (a.duration || 0), 0);
+  const selWorkMin  = selAppts.reduce((s, a) => s + (a.duration || 0), 0);
+  const selTravelMin = selAppts.length * travelTime;
+  const selTotalMin = selWorkMin + selTravelMin;
   const selRemMin   = workHours - selTotalMin;
   const selPct      = workHours > 0 ? Math.min(100, Math.round(selTotalMin / workHours * 100)) : 0;
 
@@ -158,6 +181,60 @@ export default function Kalender() {
         )}
       </div>
 
+      {/* Kørselstid-indstilling */}
+      <div style={{ margin: '8px 10px 0', background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 18 }}>🚗</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>Kørsel pr. opgave</div>
+              <div style={{ fontSize: 12, color: '#9CA3AF' }}>
+                {travelTime > 0 ? `${travelTime} min (frem + hjem)` : 'Ikke medregnet'}
+              </div>
+            </div>
+          </div>
+          <button onClick={() => { setTtInput(''); setEditTT(v => !v); }} style={{
+            background: editTT ? '#F3F4F6' : '#EFF6FF', color: editTT ? '#6B7280' : '#2563EB',
+            borderRadius: 20, padding: '6px 14px', fontSize: 13, fontWeight: 700,
+          }}>
+            {editTT ? 'Luk' : 'Skift'}
+          </button>
+        </div>
+        {editTT && (
+          <div style={{ padding: '0 14px 14px', borderTop: '1px solid #F3F4F6' }}>
+            <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 8, marginTop: 10 }}>
+              Gennemsnitlig kørselstid pr. opgave (inkl. hjemkørsel):
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              <button onClick={() => saveTT(0)} style={{
+                borderRadius: 20, padding: '7px 14px', fontSize: 13, fontWeight: 700,
+                background: travelTime === 0 ? '#2563EB' : '#F3F4F6',
+                color: travelTime === 0 ? '#fff' : '#374151',
+              }}>Ingen</button>
+              {TT_PRESETS.map(p => (
+                <button key={p.min} onClick={() => saveTT(p.min)} style={{
+                  borderRadius: 20, padding: '7px 14px', fontSize: 13, fontWeight: 700,
+                  background: travelTime === p.min ? '#2563EB' : '#F3F4F6',
+                  color: travelTime === p.min ? '#fff' : '#374151',
+                }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="number" inputMode="numeric" placeholder="F.eks. 25"
+                value={ttInput} onChange={e => setTtInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && saveCustomTT()}
+                style={{ flex: 1, fontSize: 15, borderBottom: '2px solid #2563EB', paddingBottom: 4, color: '#111827' }}
+              />
+              <span style={{ fontSize: 13, color: '#6B7280' }}>min</span>
+              <button onClick={saveCustomTT} style={{ background: '#2563EB', color: '#fff', borderRadius: 10, padding: '7px 14px', fontSize: 13, fontWeight: 700 }}>Gem</button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Kalender-grid */}
       <div style={{ margin: '10px 10px 0', background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
         {/* Ugedage-header */}
@@ -185,7 +262,7 @@ export default function Kalender() {
             const isOff  = offDays.has(dStr);
             const dayAppts = apptsByDay[dStr] || [];
             const isPast = d < today;
-            const totalMin = dayAppts.reduce((s, a) => s + (a.duration || 0), 0);
+            const totalMin = dayAppts.reduce((s, a) => s + (a.duration || 0), 0) + dayAppts.length * travelTime;
             const pct    = workHours > 0 && totalMin > 0 ? Math.min(100, Math.round(totalMin / workHours * 100)) : 0;
 
             return (
@@ -303,7 +380,10 @@ export default function Kalender() {
                     <div style={{ height: '100%', width: `${selPct}%`, background: capColor(selPct), borderRadius: 99, transition: 'width 0.3s' }} />
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6B7280' }}>
-                    <span>{formatDuration(selTotalMin)} planlagt</span>
+                    <span>
+                      {formatDuration(selWorkMin)} arbejde
+                      {selTravelMin > 0 && ` + ${formatDuration(selTravelMin)} kørsel`}
+                    </span>
                     <span style={{ color: selRemMin >= 0 ? '#10B981' : '#EF4444', fontWeight: 700 }}>
                       {selRemMin >= 0 ? `${formatDuration(selRemMin)} ledig` : `${formatDuration(-selRemMin)} overtid`}
                     </span>
