@@ -16,10 +16,11 @@ export default defineConfig({
         background_color: '#F9FAFB',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
+        start_url: '/Jjj/',
+        scope: '/Jjj/',
         icons: [
-          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' }
+          { src: '/Jjj/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/Jjj/icon-512.png', sizes: '512x512', type: 'image/png' }
         ]
       },
       workbox: {
