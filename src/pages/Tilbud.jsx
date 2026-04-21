@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import TopBar from '../components/TopBar.jsx';
+import { getCustomers, getAppointments, saveAppointments, getQuotes, saveQuotes, newId } from '../storage.js';
 
 // ── Vinduespriser fra prisliste ────────────────────────────────────────────
 const WINDOW_TIERS = [
@@ -36,6 +38,7 @@ function fmt(n, decimals = 0) {
 }
 
 export default function Tilbud() {
+  const navigate = useNavigate();
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
   const drawLayerRef = useRef(null);
@@ -58,6 +61,16 @@ export default function Tilbud() {
   const [setupTime, setSetupTime] = useState('10');
   const [isNewCustomer, setIsNewCustomer] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+
+  // Gem tilbud
+  const [customers, setCustomers] = useState([]);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveCustomerId, setSaveCustomerId] = useState('');
+  const [createAppt, setCreateAppt] = useState(false);
+  const [apptDate, setApptDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [savedMsg, setSavedMsg] = useState(false);
+
+  useEffect(() => { setCustomers(getCustomers()); }, []);
 
   // ── Init Leaflet ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -176,6 +189,39 @@ export default function Tilbud() {
   // ── Prisberegning (vindue) ───────────────────────────────────────────────
   const windowTier = m2Val > 0 ? calcWindowPrice(m2Val) : null;
   const overMax    = m2Val > 249;
+
+  const currentPrice = serviceType === 'grass' ? (m2Val > 0 ? Math.round(grassPrice) : 0)
+                     : serviceType === 'window' ? (windowTier?.price || 0)
+                     : 0;
+
+  const saveQuoteAndAppt = () => {
+    const label = serviceType === 'grass' ? 'Græsslåning' : 'Vinduespudsning';
+    const cust  = customers.find(c => c.id === saveCustomerId);
+    saveQuotes([...getQuotes(), {
+      id: newId(),
+      type: serviceType,
+      createdAt: new Date().toISOString(),
+      customerId: saveCustomerId || null,
+      totalPrice: currentPrice,
+    }]);
+    if (createAppt) {
+      saveAppointments([...getAppointments(), {
+        id: newId(),
+        customerId: saveCustomerId || undefined,
+        title: cust ? `${label} – ${cust.name}` : label,
+        date: apptDate,
+        duration: 0,
+        recurrence: 'none',
+        price: currentPrice,
+        color: serviceType === 'grass' ? 'green' : 'blue',
+        equipment: serviceType === 'grass' ? ['Plæneklipper'] : [],
+        notes: '',
+      }]);
+    }
+    setSavedMsg(true);
+    setSaveOpen(false);
+    setTimeout(() => setSavedMsg(false), 4000);
+  };
 
   const SecTitle = ({ children }) => (
     <div style={{ fontSize: 12, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>{children}</div>
@@ -416,6 +462,109 @@ export default function Tilbud() {
             )}
           </div>
         </>
+      )}
+
+      {/* ══ GEM TILBUD ═══════════════════════════════════════════════════════ */}
+      {currentPrice > 0 && (
+        <div style={{ padding: '10px 16px 0' }}>
+          {savedMsg ? (
+            <div style={{ background: '#D1FAE5', borderRadius: 14, padding: 16, textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#059669' }}>✅ Gemt!</div>
+              {createAppt && <div style={{ fontSize: 13, color: '#059669', marginTop: 4 }}>Aftale oprettet i kalenderen</div>}
+            </div>
+          ) : (
+            <button onClick={() => setSaveOpen(v => !v)} style={{
+              width: '100%', borderRadius: 14, padding: '14px 0', fontSize: 15, fontWeight: 700,
+              background: saveOpen ? '#F3F4F6' : '#10B981',
+              color: saveOpen ? '#6B7280' : '#fff',
+              boxShadow: saveOpen ? 'none' : '0 4px 14px rgba(16,185,129,0.3)',
+            }}>
+              {saveOpen ? '× Luk' : '💾 Gem tilbud'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {saveOpen && currentPrice > 0 && (
+        <div style={{ margin: '8px 16px 16px', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+
+          {/* Kunde */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
+            Tilknyt kunde
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto', marginBottom: 14 }}>
+            <button onClick={() => setSaveCustomerId('')} style={{
+              padding: '10px 14px', borderRadius: 10, textAlign: 'left', fontSize: 14,
+              fontWeight: saveCustomerId === '' ? 700 : 500,
+              background: saveCustomerId === '' ? '#EFF6FF' : '#F9FAFB',
+              border: `2px solid ${saveCustomerId === '' ? '#2563EB' : 'transparent'}`,
+              color: saveCustomerId === '' ? '#2563EB' : '#6B7280',
+            }}>
+              Ingen kunde
+            </button>
+            {customers.length === 0 && (
+              <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>
+                Ingen kunder endnu —{' '}
+                <span onClick={() => navigate('/kunder/ny')} style={{ color: '#2563EB', fontWeight: 600, cursor: 'pointer' }}>opret kunde</span>
+              </div>
+            )}
+            {customers.map(c => (
+              <button key={c.id} onClick={() => setSaveCustomerId(c.id)} style={{
+                padding: '10px 14px', borderRadius: 10, textAlign: 'left', fontSize: 14,
+                fontWeight: saveCustomerId === c.id ? 700 : 500,
+                background: saveCustomerId === c.id ? '#EFF6FF' : '#F9FAFB',
+                border: `2px solid ${saveCustomerId === c.id ? '#2563EB' : 'transparent'}`,
+                color: saveCustomerId === c.id ? '#2563EB' : '#374151',
+              }}>
+                {c.name}
+                {c.address && <span style={{ fontSize: 12, color: '#9CA3AF', marginLeft: 6 }}>{c.address}</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* Opret aftale toggle */}
+          <button onClick={() => setCreateAppt(v => !v)} style={{
+            width: '100%', borderRadius: 10, padding: '12px 14px', marginBottom: createAppt ? 10 : 14,
+            background: createAppt ? '#EFF6FF' : '#F9FAFB',
+            border: `2px solid ${createAppt ? '#2563EB' : '#E5E7EB'}`,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: createAppt ? '#2563EB' : '#374151' }}>
+                {createAppt ? '✓ ' : ''}Opret aftale direkte
+              </div>
+              <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>Tilføj til din kalender med det samme</div>
+            </div>
+            <div style={{
+              width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+              background: createAppt ? '#2563EB' : '#E5E7EB',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 14,
+            }}>
+              {createAppt ? '✓' : '+'}
+            </div>
+          </button>
+
+          {createAppt && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 6 }}>Aftaledato</div>
+              <input
+                type="date"
+                value={apptDate}
+                onChange={e => setApptDate(e.target.value)}
+                style={{ width: '100%', fontSize: 15, fontWeight: 600, background: '#F9FAFB', borderRadius: 10, padding: '10px 14px', border: '2px solid #E5E7EB', boxSizing: 'border-box' }}
+              />
+            </div>
+          )}
+
+          <button onClick={saveQuoteAndAppt} style={{
+            width: '100%', background: '#10B981', color: '#fff', borderRadius: 12,
+            padding: '14px 0', fontSize: 15, fontWeight: 700,
+            boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
+          }}>
+            ✓ Gem
+          </button>
+        </div>
       )}
     </div>
   );
