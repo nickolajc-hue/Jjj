@@ -536,27 +536,38 @@ export default function Kalender() {
                 </>
               )}
 
-              {/* Kapacitetsindikator */}
-              {!showMove && workHours > 0 && !selIsOff && (
+              {/* Total tid + Kapacitet */}
+              {!showMove && !selIsOff && selAppts.length > 0 && (
                 <div style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>⏱ Kapacitet</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: capColor(selPct) }}>
-                      {selPct}% brugt
-                    </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: workHours > 0 ? 10 : 0 }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5 }}>Total tid</div>
+                      <div style={{ fontSize: 30, fontWeight: 900, color: '#111827', lineHeight: 1.1, marginTop: 2 }}>
+                        {formatDuration(selTotalMin)}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 3 }}>
+                        {formatDuration(selWorkMin)} arbejde{selTravelMin > 0 ? ` + ${formatDuration(selTravelMin)} kørsel` : ''}
+                      </div>
+                    </div>
+                    {workHours > 0 && (
+                      <span style={{ fontSize: 15, fontWeight: 800, color: capColor(selPct), paddingTop: 2 }}>
+                        {selPct}%
+                      </span>
+                    )}
                   </div>
-                  <div style={{ background: '#F3F4F6', borderRadius: 99, height: 8, overflow: 'hidden', marginBottom: 6 }}>
-                    <div style={{ height: '100%', width: `${selPct}%`, background: capColor(selPct), borderRadius: 99, transition: 'width 0.3s' }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6B7280' }}>
-                    <span>
-                      {formatDuration(selWorkMin)} arbejde
-                      {selTravelMin > 0 && ` + ${formatDuration(selTravelMin)} kørsel`}
-                    </span>
-                    <span style={{ color: selRemMin >= 0 ? '#10B981' : '#EF4444', fontWeight: 700 }}>
-                      {selRemMin >= 0 ? `${formatDuration(selRemMin)} ledig` : `${formatDuration(-selRemMin)} overtid`}
-                    </span>
-                  </div>
+                  {workHours > 0 && (
+                    <>
+                      <div style={{ background: '#F3F4F6', borderRadius: 99, height: 8, overflow: 'hidden', marginBottom: 6 }}>
+                        <div style={{ height: '100%', width: `${selPct}%`, background: capColor(selPct), borderRadius: 99, transition: 'width 0.3s' }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6B7280' }}>
+                        <span>Maks: {formatDuration(workHours)}</span>
+                        <span style={{ color: selRemMin >= 0 ? '#10B981' : '#EF4444', fontWeight: 700 }}>
+                          {selRemMin >= 0 ? `${formatDuration(selRemMin)} ledig` : `${formatDuration(-selRemMin)} overtid`}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

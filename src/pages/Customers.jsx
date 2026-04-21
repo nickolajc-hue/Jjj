@@ -10,11 +10,13 @@ export default function Customers() {
 
   useEffect(() => { setCustomers(getCustomers()); }, []);
 
-  const filtered = customers.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.phone || '').includes(search) ||
-    (c.email || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = customers
+    .filter(c =>
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      (c.phone || '').includes(search) ||
+      (c.email || '').toLowerCase().includes(search.toLowerCase())
+    )
+    .sort((a, b) => a.name.localeCompare(b.name, 'da'));
 
   const del = (id) => {
     if (!confirm('Slet denne kunde?')) return;
