@@ -14,6 +14,14 @@ const WINDOW_TIERS = [
   { min: 230, max: 249, price: 260 },
 ];
 
+// ── Hækkeklip-prisliste ───────────────────────────────────────────────────
+const HEDGE_TIERS = [
+  { id: 'h0', label: '0 – 150 cm',   note: '',         price1: 28, price2: 46 },
+  { id: 'h1', label: '151 – 180 cm', note: '',         price1: 44, price2: 73 },
+  { id: 'h2', label: '181 – 210 cm', note: '+skammel', price1: 44, price2: 73 },
+  { id: 'h3', label: '211 – 260 cm', note: '+stige',   price1: 56, price2: 89 },
+];
+
 function calcWindowPrice(m2) {
   return WINDOW_TIERS.find(t => m2 >= t.min && m2 <= t.max) || null;
 }
@@ -44,7 +52,7 @@ export default function Tilbud() {
   const drawLayerRef = useRef(null);
   const pointsRef = useRef([]);
 
-  const [serviceType, setServiceType] = useState('grass'); // 'grass' | 'window'
+  const [serviceType, setServiceType] = useState('grass'); // 'grass' | 'window' | 'hedge'
   const [address, setAddress] = useState('');
   const [searching, setSearching] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -61,6 +69,11 @@ export default function Tilbud() {
   const [setupTime, setSetupTime] = useState('10');
   const [isNewCustomer, setIsNewCustomer] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+
+  // Hækkeklip-meter-input { h0_1: '', h0_2: '', h1_1: '', ... }
+  const [hedgeM, setHedgeM] = useState(() =>
+    Object.fromEntries(HEDGE_TIERS.flatMap(t => [[`${t.id}_1`, ''], [`${t.id}_2`, '']]))
+  );
 
   // Gem tilbud
   const [customers, setCustomers] = useState([]);
@@ -190,12 +203,24 @@ export default function Tilbud() {
   const windowTier = m2Val > 0 ? calcWindowPrice(m2Val) : null;
   const overMax    = m2Val > 249;
 
+  // ── Prisberegning (hæk) ──────────────────────────────────────────────────
+  const hedgeLines = HEDGE_TIERS.flatMap(t => {
+    const m1 = parseFloat(hedgeM[`${t.id}_1`]) || 0;
+    const m2 = parseFloat(hedgeM[`${t.id}_2`]) || 0;
+    const lines = [];
+    if (m1 > 0) lines.push({ key: `${t.id}_1`, label: `${t.label} · 1 side`, note: t.note, meters: m1, pricePerM: t.price1, total: m1 * t.price1 });
+    if (m2 > 0) lines.push({ key: `${t.id}_2`, label: `${t.label} · 2 sider`, note: t.note, meters: m2, pricePerM: t.price2, total: m2 * t.price2 });
+    return lines;
+  });
+  const hedgeTotal = hedgeLines.reduce((s, l) => s + l.total, 0);
+
   const currentPrice = serviceType === 'grass' ? (m2Val > 0 ? Math.round(grassPrice) : 0)
                      : serviceType === 'window' ? (windowTier?.price || 0)
+                     : serviceType === 'hedge'  ? hedgeTotal
                      : 0;
 
   const saveQuoteAndAppt = () => {
-    const label = serviceType === 'grass' ? 'Græsslåning' : 'Vinduespudsning';
+    const label = serviceType === 'grass' ? 'Græsslåning' : serviceType === 'window' ? 'Vinduespudsning' : 'Hækkeklip';
     const cust  = customers.find(c => c.id === saveCustomerId);
     saveQuotes([...getQuotes(), {
       id: newId(),
@@ -245,7 +270,7 @@ export default function Tilbud() {
       <div style={{ padding: '12px 16px 0' }}>
         <div style={{ display: 'flex', background: '#F3F4F6', borderRadius: 12, padding: 4, gap: 4 }}>
           <button onClick={() => setServiceType('grass')} style={{
-            flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 14, fontWeight: 700,
+            flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 13, fontWeight: 700,
             background: serviceType === 'grass' ? '#fff' : 'transparent',
             color: serviceType === 'grass' ? '#2563EB' : '#6B7280',
             boxShadow: serviceType === 'grass' ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
@@ -254,7 +279,7 @@ export default function Tilbud() {
             🌿 Græsslåning
           </button>
           <button onClick={() => setServiceType('window')} style={{
-            flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 14, fontWeight: 700,
+            flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 13, fontWeight: 700,
             background: serviceType === 'window' ? '#fff' : 'transparent',
             color: serviceType === 'window' ? '#2563EB' : '#6B7280',
             boxShadow: serviceType === 'window' ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
@@ -262,10 +287,20 @@ export default function Tilbud() {
           }}>
             🪟 Vinduespuds
           </button>
+          <button onClick={() => setServiceType('hedge')} style={{
+            flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 13, fontWeight: 700,
+            background: serviceType === 'hedge' ? '#fff' : 'transparent',
+            color: serviceType === 'hedge' ? '#2563EB' : '#6B7280',
+            boxShadow: serviceType === 'hedge' ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
+            transition: 'all 0.15s',
+          }}>
+            ✂️ Hækkeklip
+          </button>
         </div>
       </div>
 
-      {/* Adresse */}
+      {/* Adresse + kort (kun for græs og vindue) */}
+      {serviceType !== 'hedge' && (<>
       <div style={{ padding: '12px 16px 0' }}>
         <div style={{ display: 'flex', gap: 8 }}>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#fff', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 6px rgba(0,0,0,0.06)', gap: 8 }}>
@@ -335,6 +370,8 @@ export default function Tilbud() {
           <span style={{ fontSize: 17, fontWeight: 700, color: '#6B7280' }}>m²</span>
         </div>
       </div>
+
+      </>)}
 
       {/* ══ VINDUESPUDSNING ══════════════════════════════════════════════════ */}
       {serviceType === 'window' && m2Val > 0 && (
@@ -461,6 +498,86 @@ export default function Tilbud() {
               </div>
             )}
           </div>
+        </>
+      )}
+
+      {/* ══ HÆKKEKLIP ════════════════════════════════════════════════════════ */}
+      {serviceType === 'hedge' && (
+        <>
+          {/* Meter-inputs per højde */}
+          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+            <SecTitle>Antal meter hæk</SecTitle>
+            {/* Kolonneoverskrifter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <div style={{ flex: 1 }} />
+              <div style={{ width: 80, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#6B7280' }}>1 SIDE</div>
+              <div style={{ width: 80, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#6B7280' }}>2 SIDER</div>
+            </div>
+            {HEDGE_TIERS.map(t => {
+              const m1 = hedgeM[`${t.id}_1`];
+              const m2 = hedgeM[`${t.id}_2`];
+              return (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid #F3F4F6' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>{t.label}</div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+                      <span style={{ fontSize: 11, color: '#9CA3AF' }}>{t.price1} kr/m · {t.price2} kr/m</span>
+                      {t.note && <span style={{ fontSize: 11, fontWeight: 700, color: '#EF4444' }}>{t.note}</span>}
+                    </div>
+                  </div>
+                  {/* 1 side input */}
+                  <div style={{ width: 80, display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '7px 8px', gap: 3, border: m1 ? '1.5px solid #2563EB' : '1.5px solid transparent' }}>
+                    <input
+                      type="number" inputMode="decimal" placeholder="0"
+                      value={m1}
+                      onChange={e => setHedgeM(prev => ({ ...prev, [`${t.id}_1`]: e.target.value }))}
+                      style={{ flex: 1, fontSize: 15, fontWeight: 700, background: 'transparent', textAlign: 'right', width: 0 }}
+                    />
+                    <span style={{ fontSize: 10, color: '#9CA3AF' }}>m</span>
+                  </div>
+                  {/* 2 sider input */}
+                  <div style={{ width: 80, display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '7px 8px', gap: 3, border: m2 ? '1.5px solid #2563EB' : '1.5px solid transparent' }}>
+                    <input
+                      type="number" inputMode="decimal" placeholder="0"
+                      value={m2}
+                      onChange={e => setHedgeM(prev => ({ ...prev, [`${t.id}_2`]: e.target.value }))}
+                      style={{ flex: 1, fontSize: 15, fontWeight: 700, background: 'transparent', textAlign: 'right', width: 0 }}
+                    />
+                    <span style={{ fontSize: 10, color: '#9CA3AF' }}>m</span>
+                  </div>
+                </div>
+              );
+            })}
+            {/* >261 cm */}
+            <div style={{ background: '#FEF3C7', borderRadius: 10, padding: '10px 12px', marginTop: 8 }}>
+              <span style={{ fontSize: 13, color: '#D97706', fontWeight: 600 }}>Over 261 cm — kontakt for tilbud</span>
+            </div>
+          </div>
+
+          {/* Beregning + totalpris */}
+          {hedgeTotal > 0 && (
+            <>
+              <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+                <SecTitle>Beregning</SecTitle>
+                {hedgeLines.map(l => (
+                  <Row key={l.key} label={l.label} value={`${fmt(l.total)} kr`} sub={`${fmt(l.meters, 1)} m × ${l.pricePerM} kr/m${l.note ? ' · ' + l.note : ''}`} />
+                ))}
+                <Row label="Total" value={`${fmt(hedgeTotal)} kr`} bold />
+              </div>
+
+              <div style={{ margin: '12px 16px 0', background: '#2563EB', borderRadius: 14, padding: 20, boxShadow: '0 4px 16px rgba(37,99,235,0.4)' }}>
+                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+                  Samlet tilbudspris inkl. moms
+                </div>
+                <div style={{ color: '#fff', fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
+                  {hedgeTotal.toLocaleString('da-DK', { style: 'currency', currency: 'DKK', maximumFractionDigits: 0 })}
+                </div>
+                <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 8 }}>
+                  {hedgeLines.length} {hedgeLines.length === 1 ? 'linje' : 'linjer'} · {hedgeLines.reduce((s, l) => s + l.meters, 0).toFixed(0)} m i alt
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
 
