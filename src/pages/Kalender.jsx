@@ -10,6 +10,7 @@ import {
   toDateStr,
 } from '../storage.js';
 import CalendarPicker from '../components/CalendarPicker.jsx';
+import { generateICS } from '../ics.js';
 
 const MÅNEDER = ['Januar','Februar','Marts','April','Maj','Juni','Juli','August','September','Oktober','November','December'];
 const UGEDAGE = ['Ma','Ti','On','To','Fr','Lø','Sø'];
@@ -140,6 +141,24 @@ export default function Kalender() {
     saveOffDays(next);
     setPendingOff(new Set());
     setMultiOff(false);
+  };
+
+  const exportCalendar = async () => {
+    const appts = getAppointments();
+    const custs = Object.fromEntries(getCustomers().map(c => [c.id, c]));
+    const ics   = generateICS(appts, custs);
+    const blob  = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const file  = new File([blob], 'KundeApp-aftaler.ics', { type: 'text/calendar' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'KundeApp Aftaler' });
+        return;
+      }
+    } catch { /* user cancelled or not supported */ }
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href = url; a.download = 'KundeApp-aftaler.ics'; a.click();
+    URL.revokeObjectURL(url);
   };
 
   const firstDow  = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
@@ -404,15 +423,22 @@ export default function Kalender() {
         </div>
       )}
 
-      {/* Tilføj-knap */}
+      {/* Tilføj-knap + Kalender-eksport */}
       {!multiOff && (
-        <div style={{ padding: '6px 12px 0' }}>
+        <div style={{ padding: '6px 12px 0', display: 'flex', gap: 10 }}>
           <button onClick={() => navigate('/aftaler/ny')} style={{
-            width: '100%', background: '#2563EB', color: '#fff', borderRadius: 14,
+            flex: 1, background: '#2563EB', color: '#fff', borderRadius: 14,
             padding: '14px 0', fontSize: 16, fontWeight: 700,
             boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
           }}>
             + Ny opgave
+          </button>
+          <button onClick={exportCalendar} style={{
+            background: '#fff', color: '#374151', borderRadius: 14,
+            padding: '14px 16px', fontSize: 20, fontWeight: 700,
+            boxShadow: '0 1px 6px rgba(0,0,0,0.1)', flexShrink: 0,
+          }} title="Eksporter til Kalender">
+            📅
           </button>
         </div>
       )}

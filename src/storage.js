@@ -1,6 +1,15 @@
 const CUSTOMERS_KEY = 'kundeapp_customers';
 const APPOINTMENTS_KEY = 'kundeapp_appointments';
 const DAY_RECORDS_KEY = 'kundeapp_day_records';
+const QUOTES_KEY = 'kundeapp_quotes';
+
+export function getQuotes() {
+  try { return JSON.parse(localStorage.getItem(QUOTES_KEY) || '[]'); }
+  catch { return []; }
+}
+export function saveQuotes(q) {
+  localStorage.setItem(QUOTES_KEY, JSON.stringify(q));
+}
 
 export function getCustomers() {
   try { return JSON.parse(localStorage.getItem(CUSTOMERS_KEY) || '[]'); }
