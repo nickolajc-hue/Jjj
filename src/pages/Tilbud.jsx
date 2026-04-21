@@ -14,13 +14,13 @@ const WINDOW_TIERS = [
   { min: 230, max: 249, price: 260 },
 ];
 
-// ── Hækkeklip-prisliste ───────────────────────────────────────────────────
-const HEDGE_TIERS = [
-  { id: 'h0', label: '0 – 150 cm',   note: '',         price1: 28, price2: 46 },
-  { id: 'h1', label: '151 – 180 cm', note: '',         price1: 44, price2: 73 },
-  { id: 'h2', label: '181 – 210 cm', note: '+skammel', price1: 44, price2: 73 },
-  { id: 'h3', label: '211 – 260 cm', note: '+stige',   price1: 56, price2: 89 },
-];
+// ── Hækkeklip-prismodel ───────────────────────────────────────────────────
+const H_SURCHARGE = {
+  height:  { '0-200': 0, '201-250': 10, '251-300': 25, '301-350': 35 },
+  width:   { '0-50': 0, '51-100': 10, '101-150': 20, '151-200': 30 },
+  topCut:  { '0-50': 0, '51-100': 20, '101-150': 25, '151-200': 30 },
+  sideCut: { '0-25': 0, '26-50': 20, '51-75': 40, '76-100': 60, '101-125': 80 },
+};
 
 function calcWindowPrice(m2) {
   return WINDOW_TIERS.find(t => m2 >= t.min && m2 <= t.max) || null;
@@ -70,19 +70,16 @@ export default function Tilbud() {
   const [isNewCustomer, setIsNewCustomer] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Hækkeklip-meter-input { h0_1: '', h0_2: '', h1_1: '', ... }
-  const [hedgeM, setHedgeM] = useState(() =>
-    Object.fromEntries(HEDGE_TIERS.flatMap(t => [[`${t.id}_1`, ''], [`${t.id}_2`, '']]))
-  );
-  // Valgfrie tillæg
-  const [torneTillæg,    setTorneTillæg]    = useState(false);
-  const [torneM,         setTorneM]         = useState('');
-  const [forvokset,      setForvokset]      = useState(false);
-  const [bredTillæg,     setBredTillæg]     = useState('none'); // 'none'|'medium'|'wide'
-  const [bredM,          setBredM]          = useState('');
-  const [skraaningTillæg, setSkraaningTillæg] = useState(false);
-  const [skraaningM,     setSkraaningM]     = useState('');
-  const [skraaningRate,  setSkraaningRate]  = useState(15);
+  // Hækkeklip
+  const [hMeters,    setHMeters]    = useState('');
+  const [hService,   setHService]   = useState('standard'); // 'standard'|'side_top'|'both'
+  const [hHeight,    setHHeight]    = useState('0-200');
+  const [hWidth,     setHWidth]     = useState('0-50');
+  const [hTopCut,    setHTopCut]    = useState('0-50');
+  const [hSideCut,   setHSideCut]   = useState('0-25');
+  const [hDifficult, setHDifficult] = useState(false);
+  const [hDiffM,     setHDiffM]     = useState('');
+  const [hDebris,    setHDebris]    = useState('yes');
 
   // Gem tilbud
   const [customers, setCustomers] = useState([]);
@@ -94,10 +91,11 @@ export default function Tilbud() {
   const [savedMsg, setSavedMsg] = useState(false);
   const [quoteApptOpen, setQuoteApptOpen] = useState(null);
   const [quoteApptDate, setQuoteApptDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [showNewCust,   setShowNewCust]   = useState(false);
-  const [newCustName,   setNewCustName]   = useState('');
-  const [newCustPhone,  setNewCustPhone]  = useState('');
-  const [newCustAddr,   setNewCustAddr]   = useState('');
+  const [showNewCust,    setShowNewCust]    = useState(false);
+  const [newCustName,    setNewCustName]    = useState('');
+  const [newCustPhone,   setNewCustPhone]   = useState('');
+  const [newCustAddr,    setNewCustAddr]    = useState('');
+  const [editingQuoteId, setEditingQuoteId] = useState(null);
 
   const loadQuotes = () => setQuotes([...getQuotes()].reverse());
   useEffect(() => { setCustomers(getCustomers()); loadQuotes(); }, []);
@@ -221,33 +219,16 @@ export default function Tilbud() {
   const overMax    = m2Val > 249;
 
   // ── Prisberegning (hæk) ──────────────────────────────────────────────────
-  const hedgeLines = HEDGE_TIERS.flatMap(t => {
-    const m1 = parseFloat(hedgeM[`${t.id}_1`]) || 0;
-    const m2 = parseFloat(hedgeM[`${t.id}_2`]) || 0;
-    const lines = [];
-    if (m1 > 0) lines.push({ key: `${t.id}_1`, label: `${t.label} · 1 side`, meters: m1, pricePerM: t.price1, total: m1 * t.price1 });
-    if (m2 > 0) lines.push({ key: `${t.id}_2`, label: `${t.label} · 2 sider`, meters: m2, pricePerM: t.price2, total: m2 * t.price2 });
-    return lines;
-  });
-  const klippesum   = hedgeLines.reduce((s, l) => s + l.total, 0);
-  // Auto-tillæg: skammel/stige
-  const skammelFee  = (parseFloat(hedgeM.h2_1) > 0 || parseFloat(hedgeM.h2_2) > 0) ? 150 : 0;
-  const stigeFee    = (parseFloat(hedgeM.h3_1) > 0 || parseFloat(hedgeM.h3_2) > 0) ? 250 : 0;
-  // Kørsel & opstart (beregnet på klippesum)
-  const kørselFee   = klippesum <= 0 ? 0
-                    : klippesum < 1500 ? 499
-                    : klippesum < 4500 ? 399
-                    : klippesum < 7500 ? 299
-                    : 0;
-  // Valgfrie tillæg
-  const torneFee    = torneTillæg ? (parseFloat(torneM) || 0) * 6 : 0;
-  const forvoksetFee = forvokset  ? Math.round(klippesum * 0.10) : 0;
-  const bredFee     = bredTillæg === 'medium' ? (parseFloat(bredM) || 0) * 6
-                    : bredTillæg === 'wide'   ? (parseFloat(bredM) || 0) * 12 : 0;
-  const skraaningFee = skraaningTillæg ? (parseFloat(skraaningM) || 0) * skraaningRate : 0;
-  const hedgeTotal  = klippesum > 0
-    ? Math.max(1499, klippesum + skammelFee + stigeFee + kørselFee + torneFee + forvoksetFee + bredFee + skraaningFee)
-    : 0;
+  const hM          = parseFloat(hMeters) || 0;
+  const hBase       = hService === 'standard' ? 70 : hService === 'side_top' ? 90 : 120;
+  const hHeightAdd  = H_SURCHARGE.height[hHeight]  || 0;
+  const hWidthAdd   = H_SURCHARGE.width[hWidth]    || 0;
+  const hTopAdd     = H_SURCHARGE.topCut[hTopCut]  || 0;
+  const hSideAdd    = H_SURCHARGE.sideCut[hSideCut]|| 0;
+  const hPricePerM  = hBase + hHeightAdd + hWidthAdd + hTopAdd + hSideAdd;
+  const hDiffFee    = hDifficult ? (parseFloat(hDiffM) || 0) * 50 : 0;
+  const hRaw        = hM > 0 ? hM * hPricePerM + hDiffFee : 0;
+  const hedgeTotal  = hRaw > 0 ? Math.round(hDebris === 'no' ? hRaw * 0.8 : hRaw) : 0;
 
   const currentPrice = serviceType === 'grass' ? (m2Val > 0 ? Math.round(grassPrice) : 0)
                      : serviceType === 'window' ? (windowTier?.price || 0)
