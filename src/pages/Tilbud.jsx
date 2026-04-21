@@ -14,7 +14,16 @@ const WINDOW_TIERS = [
   { min: 230, max: 249, price: 260 },
 ];
 
-// ── Hækkeklip-prismodel ───────────────────────────────────────────────────
+// ── Hækkeklip — tier-priser ──────────────────────────────────────────────
+const HEDGE_TIERS = [
+  { id: 't1', label: '0–150 cm',   price1: 28, price2: 46 },
+  { id: 't2', label: '151–180 cm', price1: 44, price2: 73 },
+  { id: 't3', label: '181–210 cm', price1: 44, price2: 73, note: '+skammel' },
+  { id: 't4', label: '211–260 cm', price1: 56, price2: 89, note: '+stige'   },
+];
+const EMPTY_HEDGE_M = { t1_1:'', t1_2:'', t2_1:'', t2_2:'', t3_1:'', t3_2:'', t4_1:'', t4_2:'' };
+
+// ── Beskæring — tillægspriser ─────────────────────────────────────────────
 const H_SURCHARGE = {
   height:  { '0-200': 0, '201-250': 10, '251-300': 25, '301-350': 35 },
   width:   { '0-50': 0, '51-100': 10, '101-150': 20, '151-200': 30 },
@@ -81,6 +90,17 @@ export default function Tilbud() {
   const [hDiffM,     setHDiffM]     = useState('');
   const [hDebris,    setHDebris]    = useState('yes');
   const [hSubType,   setHSubType]   = useState('klip'); // 'klip'|'beskæring'
+
+  // Hækkeklip (klip) — tier-baseret
+  const [hedgeM,         setHedgeM]         = useState(EMPTY_HEDGE_M);
+  const [torneTillæg,    setTorneTillæg]    = useState(false);
+  const [torneM,         setTorneM]         = useState('');
+  const [forvokset,      setForvokset]      = useState(false);
+  const [bredTillæg,     setBredTillæg]     = useState('none');
+  const [bredM,          setBredM]          = useState('');
+  const [skraaningTillæg,setSkraaningTillæg] = useState(false);
+  const [skraaningRate,  setSkraaningRate]  = useState(15);
+  const [skraaningM,     setSkraaningM]     = useState('');
 
   // Gem tilbud
   const [customers, setCustomers] = useState([]);
@@ -219,7 +239,7 @@ export default function Tilbud() {
   const windowTier = m2Val > 0 ? calcWindowPrice(m2Val) : null;
   const overMax    = m2Val > 249;
 
-  // ── Prisberegning (hæk) ──────────────────────────────────────────────────
+  // ── Prisberegning (beskæring — H_SURCHARGE) ──────────────────────────────
   const hM          = parseFloat(hMeters) || 0;
   const hBase       = hService === 'standard' ? 70 : hService === 'side_top' ? 90 : 120;
   const hHeightAdd  = H_SURCHARGE.height[hHeight]  || 0;
@@ -229,26 +249,49 @@ export default function Tilbud() {
   const hPricePerM  = hBase + hHeightAdd + hWidthAdd + hTopAdd + hSideAdd;
   const hDiffFee    = hDifficult ? (parseFloat(hDiffM) || 0) * 50 : 0;
   const hRaw        = hM > 0 ? hM * hPricePerM + hDiffFee : 0;
-  const hedgeTotal  = hRaw > 0 ? Math.round(hDebris === 'no' ? hRaw * 0.8 : hRaw) : 0;
+  const beskæringTotal = hRaw > 0 ? Math.round(hDebris === 'no' ? hRaw * 0.8 : hRaw) : 0;
+
+  // ── Prisberegning (hækkeklip — tier-model) ───────────────────────────────
+  const hedgeLines = HEDGE_TIERS.flatMap(t => {
+    const m1 = parseFloat(hedgeM[`${t.id}_1`]) || 0;
+    const m2 = parseFloat(hedgeM[`${t.id}_2`]) || 0;
+    const lines = [];
+    if (m1 > 0) lines.push({ key: `${t.id}_1`, label: `${t.label} — 1 side`,  meters: m1, pricePerM: t.price1, total: m1 * t.price1 });
+    if (m2 > 0) lines.push({ key: `${t.id}_2`, label: `${t.label} — 2 sider`, meters: m2, pricePerM: t.price2, total: m2 * t.price2 });
+    return lines;
+  });
+  const klippesum    = hedgeLines.reduce((s, l) => s + l.total, 0);
+  const skammelFee   = ((parseFloat(hedgeM.t3_1)||0) + (parseFloat(hedgeM.t3_2)||0)) > 0 ? 150 : 0;
+  const stigeFee     = ((parseFloat(hedgeM.t4_1)||0) + (parseFloat(hedgeM.t4_2)||0)) > 0 ? 250 : 0;
+  const kørselFee    = klippesum > 0 ? (klippesum < 1500 ? 499 : klippesum < 4500 ? 399 : klippesum < 7500 ? 299 : 0) : 0;
+  const torneFee     = torneTillæg ? (parseFloat(torneM)||0) * 6 : 0;
+  const forvoksetFee = forvokset ? klippesum * 0.1 : 0;
+  const bredFee      = bredTillæg !== 'none' ? (parseFloat(bredM)||0) * (bredTillæg === 'medium' ? 6 : 12) : 0;
+  const skraaningFee = skraaningTillæg ? (parseFloat(skraaningM)||0) * skraaningRate : 0;
+  const klipRaw      = klippesum + skammelFee + stigeFee + kørselFee + torneFee + forvoksetFee + bredFee + skraaningFee;
+  const hedgeKlipTotal = klipRaw > 0 ? Math.max(1499, Math.round(klipRaw)) : 0;
 
   const currentPrice = serviceType === 'grass' ? (m2Val > 0 ? Math.round(grassPrice) : 0)
                      : serviceType === 'window' ? (windowTier?.price || 0)
-                     : serviceType === 'hedge'  ? hedgeTotal
+                     : serviceType === 'hedge'  ? (hSubType === 'klip' ? hedgeKlipTotal : beskæringTotal)
                      : 0;
 
   const saveQuoteAndAppt = () => {
     const hedgeLabel = hSubType === 'beskæring' ? 'Beskæring' : 'Hækkeklip';
     const label = serviceType === 'grass' ? 'Græsslåning' : serviceType === 'window' ? 'Vinduespudsning' : hedgeLabel;
     const cust  = customers.find(c => c.id === saveCustomerId);
-    const params = serviceType === 'hedge'
+    const params = serviceType === 'hedge' && hSubType === 'klip'
+      ? { subType: 'klip', hedgeM, torneTillæg, torneM, forvokset, bredTillæg, bredM, skraaningTillæg, skraaningRate, skraaningM }
+      : serviceType === 'hedge'
       ? { subType: hSubType, meters: hMeters, service: hService, height: hHeight, width: hWidth, topCut: hTopCut, sideCut: hSideCut, difficult: hDifficult, diffM: hDiffM, debris: hDebris }
       : serviceType === 'grass'
       ? { m2: manualM2, speed, rate, setupTime, isNewCustomer }
       : { m2: manualM2 };
-    saveQuotes([...getQuotes(), {
-      id: newId(),
+    const existing = editingQuoteId ? getQuotes().find(q => q.id === editingQuoteId) : null;
+    saveQuotes([...getQuotes().filter(q => q.id !== (editingQuoteId || '')), {
+      id: editingQuoteId || newId(),
       type: serviceType,
-      createdAt: new Date().toISOString(),
+      createdAt: existing?.createdAt || new Date().toISOString(),
       customerId: saveCustomerId || null,
       totalPrice: currentPrice,
       params,
@@ -269,6 +312,7 @@ export default function Tilbud() {
     }
     setSavedMsg(true);
     setSaveOpen(false);
+    setEditingQuoteId(null);
     loadQuotes();
     setTimeout(() => setSavedMsg(false), 4000);
   };
@@ -307,6 +351,47 @@ export default function Tilbud() {
     onCreated(c.id);
     setNewCustName(''); setNewCustPhone(''); setNewCustAddr('');
     setShowNewCust(false);
+  };
+
+  const editQuote = (q) => {
+    setEditingQuoteId(q.id);
+    setSaveCustomerId(q.customerId || '');
+    setServiceType(q.type);
+    setQuoteApptOpen(null);
+    if (q.type === 'hedge') {
+      const p = q.params || {};
+      setHSubType(p.subType || 'klip');
+      if (p.subType === 'klip' || !p.subType) {
+        setHedgeM(p.hedgeM || EMPTY_HEDGE_M);
+        setTorneTillæg(p.torneTillæg || false);
+        setTorneM(p.torneM || '');
+        setForvokset(p.forvokset || false);
+        setBredTillæg(p.bredTillæg || 'none');
+        setBredM(p.bredM || '');
+        setSkraaningTillæg(p.skraaningTillæg || false);
+        setSkraaningRate(p.skraaningRate || 15);
+        setSkraaningM(p.skraaningM || '');
+      } else {
+        setHMeters(p.meters || '');
+        setHService(p.service || 'standard');
+        setHHeight(p.height || '0-200');
+        setHWidth(p.width || '0-50');
+        setHTopCut(p.topCut || '0-50');
+        setHSideCut(p.sideCut || '0-25');
+        setHDifficult(p.difficult || false);
+        setHDiffM(p.diffM || '');
+        setHDebris(p.debris || 'yes');
+      }
+    } else if (q.type === 'grass') {
+      const p = q.params || {};
+      setManualM2(p.m2 || '');
+      if (p.speed) setSpeed(p.speed);
+      if (p.rate) setRate(p.rate);
+      if (p.setupTime) setSetupTime(p.setupTime);
+      setIsNewCustomer(p.isNewCustomer ?? true);
+    } else if (q.type === 'window') {
+      setManualM2((q.params?.m2) || '');
+    }
   };
 
   const SecTitle = ({ children }) => (
@@ -574,183 +659,294 @@ export default function Tilbud() {
             </div>
           </div>
 
-          {/* Antal meter */}
-          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-            <SecTitle>Antal meter hæk</SecTitle>
-            <div style={{ display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 10, padding: '10px 14px', gap: 6 }}>
-              <input style={{ flex: 1, fontSize: 26, fontWeight: 800, color: '#111827', background: 'transparent', width: 0 }}
-                type="number" inputMode="decimal" value={hMeters}
-                onChange={e => setHMeters(e.target.value)} placeholder="0" />
-              <span style={{ fontSize: 17, fontWeight: 700, color: '#6B7280' }}>m</span>
+          {/* ── HÆKKEKLIP (tier-model) ─────────────────────────────────── */}
+          {hSubType === 'klip' && (<>
+            <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+              <SecTitle>Antal meter pr. højde</SecTitle>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <div style={{ flex: 1 }} />
+                <div style={{ width: 76, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#6B7280' }}>1 SIDE</div>
+                <div style={{ width: 76, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#6B7280' }}>2 SIDER</div>
+              </div>
+              {HEDGE_TIERS.map(t => {
+                const m1 = hedgeM[`${t.id}_1`];
+                const m2 = hedgeM[`${t.id}_2`];
+                return (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid #F3F4F6' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>{t.label}</div>
+                      <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>
+                        {t.price1} kr/m · {t.price2} kr/m
+                        {t.note && <span style={{ fontWeight: 700, color: '#EF4444', marginLeft: 4 }}>{t.note}</span>}
+                      </div>
+                    </div>
+                    <div style={{ width: 76, display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '7px 8px', gap: 3, border: m1 ? '1.5px solid #2563EB' : '1.5px solid transparent' }}>
+                      <input type="number" inputMode="decimal" placeholder="0" value={m1}
+                        onChange={e => setHedgeM(prev => ({ ...prev, [`${t.id}_1`]: e.target.value }))}
+                        style={{ flex: 1, fontSize: 15, fontWeight: 700, background: 'transparent', textAlign: 'right', width: 0 }} />
+                      <span style={{ fontSize: 10, color: '#9CA3AF' }}>m</span>
+                    </div>
+                    <div style={{ width: 76, display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '7px 8px', gap: 3, border: m2 ? '1.5px solid #2563EB' : '1.5px solid transparent' }}>
+                      <input type="number" inputMode="decimal" placeholder="0" value={m2}
+                        onChange={e => setHedgeM(prev => ({ ...prev, [`${t.id}_2`]: e.target.value }))}
+                        style={{ flex: 1, fontSize: 15, fontWeight: 700, background: 'transparent', textAlign: 'right', width: 0 }} />
+                      <span style={{ fontSize: 10, color: '#9CA3AF' }}>m</span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ background: '#FEF3C7', borderRadius: 10, padding: '10px 12px', marginTop: 8 }}>
+                <span style={{ fontSize: 13, color: '#D97706', fontWeight: 600 }}>Over 261 cm — kontakt for tilbud</span>
+              </div>
             </div>
-          </div>
 
-          {/* Klipning */}
-          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-            <SecTitle>Klipning</SecTitle>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {[
-                { val: 'standard', label: 'Top ELLER 1 side',  sub: '70 kr/m'  },
-                { val: 'side_top', label: '1 side + top',      sub: '90 kr/m'  },
-                { val: 'both',     label: 'Begge sider + top', sub: '120 kr/m' },
-              ].map(o => (
-                <button key={o.val} onClick={() => setHService(o.val)} style={{
-                  borderRadius: 10, padding: '12px 14px', textAlign: 'left',
-                  background: hService === o.val ? '#EFF6FF' : '#F9FAFB',
-                  border: `2px solid ${hService === o.val ? '#2563EB' : 'transparent'}`,
+            {klippesum > 0 && (<>
+              <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+                <SecTitle>Tillæg</SecTitle>
+                {/* Torne */}
+                <button onClick={() => setTorneTillæg(v => !v)} style={{
+                  width: '100%', borderRadius: 10, padding: '11px 14px', marginBottom: 8,
+                  background: torneTillæg ? '#EFF6FF' : '#F9FAFB', border: `2px solid ${torneTillæg ? '#2563EB' : 'transparent'}`,
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: hService === o.val ? '#2563EB' : '#374151' }}>{o.label}</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: hService === o.val ? '#2563EB' : '#9CA3AF' }}>{o.sub}</span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: torneTillæg ? '#2563EB' : '#374151' }}>{torneTillæg ? '✓ ' : ''}Torne-/stikhæk</div>
+                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>Tjørn, berberis m.fl. · +6 kr/m</div>
+                  </div>
+                  {torneTillæg && torneM && <span style={{ fontSize: 14, fontWeight: 700, color: '#2563EB' }}>+{fmt((parseFloat(torneM)||0)*6)} kr</span>}
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Hækhøjde */}
-          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-            <SecTitle>Hækhøjde</SecTitle>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {[
-                { val: '0-200',   label: '0–200',   sub: 'inkl.'     },
-                { val: '201-250', label: '201–250', sub: '+10 kr/m'  },
-                { val: '251-300', label: '251–300', sub: '+25 kr/m'  },
-                { val: '301-350', label: '301–350', sub: '+35 kr/m'  },
-              ].map(o => (
-                <button key={o.val} onClick={() => setHHeight(o.val)} style={{
-                  flex: 1, borderRadius: 10, padding: '9px 4px', fontSize: 11, fontWeight: 700,
-                  background: hHeight === o.val ? '#EFF6FF' : '#F9FAFB',
-                  border: `2px solid ${hHeight === o.val ? '#2563EB' : 'transparent'}`,
-                  color: hHeight === o.val ? '#2563EB' : '#374151',
+                {torneTillæg && (
+                  <div style={{ display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '8px 12px', gap: 6, marginBottom: 8 }}>
+                    <input type="number" inputMode="decimal" placeholder="0" value={torneM} onChange={e => setTorneM(e.target.value)}
+                      style={{ flex: 1, fontSize: 16, fontWeight: 700, background: 'transparent' }} />
+                    <span style={{ fontSize: 12, color: '#9CA3AF' }}>meter</span>
+                  </div>
+                )}
+                {/* Forvokset */}
+                <button onClick={() => setForvokset(v => !v)} style={{
+                  width: '100%', borderRadius: 10, padding: '11px 14px', marginBottom: 8,
+                  background: forvokset ? '#EFF6FF' : '#F9FAFB', border: `2px solid ${forvokset ? '#2563EB' : 'transparent'}`,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 }}>
-                  {o.label} cm
-                  <div style={{ fontSize: 10, fontWeight: 500, color: hHeight === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 2 }}>{o.sub}</div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: forvokset ? '#2563EB' : '#374151' }}>{forvokset ? '✓ ' : ''}Forvokset hæk</div>
+                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>Ikke klippet 12–24 mdr · +10% på klippesum</div>
+                  </div>
+                  {forvokset && <span style={{ fontSize: 14, fontWeight: 700, color: '#2563EB' }}>+{fmt(forvoksetFee)} kr</span>}
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Hækbredde */}
-          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-            <SecTitle>Hækbredde</SecTitle>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {[
-                { val: '0-50',    label: '0–50',    sub: 'inkl.'    },
-                { val: '51-100',  label: '51–100',  sub: '+10 kr/m' },
-                { val: '101-150', label: '101–150', sub: '+20 kr/m' },
-                { val: '151-200', label: '151–200', sub: '+30 kr/m' },
-              ].map(o => (
-                <button key={o.val} onClick={() => setHWidth(o.val)} style={{
-                  flex: 1, borderRadius: 10, padding: '9px 4px', fontSize: 11, fontWeight: 700,
-                  background: hWidth === o.val ? '#EFF6FF' : '#F9FAFB',
-                  border: `2px solid ${hWidth === o.val ? '#2563EB' : 'transparent'}`,
-                  color: hWidth === o.val ? '#2563EB' : '#374151',
+                {/* Ekstra bred */}
+                <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 6, fontWeight: 600 }}>Ekstra bred hæk</div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: bredTillæg !== 'none' ? 8 : 8 }}>
+                  {[{ val:'none',label:'Ingen',sub:''}, {val:'medium',label:'1,0–1,5 m',sub:'+6 kr/m'}, {val:'wide',label:'> 1,5 m',sub:'+12 kr/m'}].map(o => (
+                    <button key={o.val} onClick={() => setBredTillæg(o.val)} style={{
+                      flex: 1, borderRadius: 10, padding: '9px 6px', fontSize: 12, fontWeight: 700,
+                      background: bredTillæg === o.val ? '#EFF6FF' : '#F9FAFB',
+                      border: `2px solid ${bredTillæg === o.val ? '#2563EB' : 'transparent'}`,
+                      color: bredTillæg === o.val ? '#2563EB' : '#374151',
+                    }}>
+                      {o.label}
+                      {o.sub && <div style={{ fontSize: 10, fontWeight: 500, color: bredTillæg === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 1 }}>{o.sub}</div>}
+                    </button>
+                  ))}
+                </div>
+                {bredTillæg !== 'none' && (
+                  <div style={{ display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '8px 12px', gap: 6, marginBottom: 8 }}>
+                    <input type="number" inputMode="decimal" placeholder="0" value={bredM} onChange={e => setBredM(e.target.value)}
+                      style={{ flex: 1, fontSize: 16, fontWeight: 700, background: 'transparent' }} />
+                    <span style={{ fontSize: 12, color: '#9CA3AF' }}>meter</span>
+                    {bredM && <span style={{ fontSize: 13, fontWeight: 700, color: '#2563EB' }}>+{fmt(bredFee)} kr</span>}
+                  </div>
+                )}
+                {/* Skråning */}
+                <button onClick={() => setSkraaningTillæg(v => !v)} style={{
+                  width: '100%', borderRadius: 10, padding: '11px 14px', marginBottom: skraaningTillæg ? 8 : 0,
+                  background: skraaningTillæg ? '#EFF6FF' : '#F9FAFB', border: `2px solid ${skraaningTillæg ? '#2563EB' : 'transparent'}`,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 }}>
-                  {o.label} cm
-                  <div style={{ fontSize: 10, fontWeight: 500, color: hWidth === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 2 }}>{o.sub}</div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: skraaningTillæg ? '#2563EB' : '#374151' }}>{skraaningTillæg ? '✓ ' : ''}Skråning / svært tilgængeligt</div>
+                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>+15–30 kr/m</div>
+                  </div>
+                  {skraaningTillæg && skraaningM && <span style={{ fontSize: 14, fontWeight: 700, color: '#2563EB' }}>+{fmt(skraaningFee)} kr</span>}
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Topklip-bredde */}
-          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-            <SecTitle>Topklip-bredde</SecTitle>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {[
-                { val: '0-50',    label: '0–50',    sub: 'inkl.'    },
-                { val: '51-100',  label: '51–100',  sub: '+20 kr/m' },
-                { val: '101-150', label: '101–150', sub: '+25 kr/m' },
-                { val: '151-200', label: '151–200', sub: '+30 kr/m' },
-              ].map(o => (
-                <button key={o.val} onClick={() => setHTopCut(o.val)} style={{
-                  flex: 1, borderRadius: 10, padding: '9px 4px', fontSize: 11, fontWeight: 700,
-                  background: hTopCut === o.val ? '#EFF6FF' : '#F9FAFB',
-                  border: `2px solid ${hTopCut === o.val ? '#2563EB' : 'transparent'}`,
-                  color: hTopCut === o.val ? '#2563EB' : '#374151',
-                }}>
-                  {o.label} cm
-                  <div style={{ fontSize: 10, fontWeight: 500, color: hTopCut === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 2 }}>{o.sub}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Sideklip-bredde */}
-          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-            <SecTitle>Sideklip-bredde (enkelt side)</SecTitle>
-            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              {[
-                { val: '0-25',    label: '0–25',    sub: 'inkl.'    },
-                { val: '26-50',   label: '26–50',   sub: '+20 kr/m' },
-                { val: '51-75',   label: '51–75',   sub: '+40 kr/m' },
-                { val: '76-100',  label: '76–100',  sub: '+60 kr/m' },
-                { val: '101-125', label: '101–125', sub: '+80 kr/m' },
-              ].map(o => (
-                <button key={o.val} onClick={() => setHSideCut(o.val)} style={{
-                  flex: '1 1 calc(33% - 4px)', borderRadius: 10, padding: '9px 4px', fontSize: 11, fontWeight: 700,
-                  background: hSideCut === o.val ? '#EFF6FF' : '#F9FAFB',
-                  border: `2px solid ${hSideCut === o.val ? '#2563EB' : 'transparent'}`,
-                  color: hSideCut === o.val ? '#2563EB' : '#374151',
-                }}>
-                  {o.label} cm
-                  <div style={{ fontSize: 10, fontWeight: 500, color: hSideCut === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 2 }}>{o.sub}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Svær adgang */}
-          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-            <SecTitle>Svær adgang</SecTitle>
-            <button onClick={() => setHDifficult(v => !v)} style={{
-              width: '100%', borderRadius: 10, padding: '12px 14px',
-              background: hDifficult ? '#EFF6FF' : '#F9FAFB',
-              border: `2px solid ${hDifficult ? '#2563EB' : 'transparent'}`,
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            }}>
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: hDifficult ? '#2563EB' : '#374151' }}>{hDifficult ? '✓ ' : ''}Svær adgang</div>
-                <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>+50 kr/m</div>
+                {skraaningTillæg && (<>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    {[15, 20, 25, 30].map(r => (
+                      <button key={r} onClick={() => setSkraaningRate(r)} style={{
+                        flex: 1, borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700,
+                        background: skraaningRate === r ? '#2563EB' : '#F3F4F6',
+                        color: skraaningRate === r ? '#fff' : '#374151',
+                      }}>{r} kr/m</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '8px 12px', gap: 6 }}>
+                    <input type="number" inputMode="decimal" placeholder="0" value={skraaningM} onChange={e => setSkraaningM(e.target.value)}
+                      style={{ flex: 1, fontSize: 16, fontWeight: 700, background: 'transparent' }} />
+                    <span style={{ fontSize: 12, color: '#9CA3AF' }}>meter</span>
+                  </div>
+                </>)}
               </div>
-            </button>
-            {hDifficult && (
-              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '8px 12px', gap: 6 }}>
-                <input type="number" inputMode="decimal" placeholder="0" value={hDiffM} onChange={e => setHDiffM(e.target.value)}
-                  style={{ flex: 1, fontSize: 16, fontWeight: 700, background: 'transparent' }} />
-                <span style={{ fontSize: 12, color: '#9CA3AF' }}>meter</span>
+
+              <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+                <SecTitle>Beregning</SecTitle>
+                {hedgeLines.map(l => (
+                  <Row key={l.key} label={l.label} value={`${fmt(l.total)} kr`} sub={`${fmt(l.meters, 1)} m × ${l.pricePerM} kr/m`} />
+                ))}
+                {skammelFee > 0 && <Row label="Skammel (181–210 cm)" value={`+${fmt(skammelFee)} kr`} accent />}
+                {stigeFee   > 0 && <Row label="Stige (211–260 cm)"   value={`+${fmt(stigeFee)} kr`} accent />}
+                {kørselFee  > 0 && <Row label="Kørsel & opstart" value={`+${fmt(kørselFee)} kr`} sub={`Klippesum ${fmt(klippesum)} kr`} />}
+                {torneFee   > 0 && <Row label={`Torne-/stikhæk (${fmt(parseFloat(torneM)||0,1)} m)`} value={`+${fmt(torneFee)} kr`} />}
+                {forvoksetFee > 0 && <Row label="Forvokset (+10%)" value={`+${fmt(forvoksetFee)} kr`} />}
+                {bredFee    > 0 && <Row label={`Ekstra bred (${bredTillæg==='medium'?'1,0–1,5 m':'>1,5 m'})`} value={`+${fmt(bredFee)} kr`} />}
+                {skraaningFee > 0 && <Row label={`Skråning (${skraaningRate} kr/m)`} value={`+${fmt(skraaningFee)} kr`} />}
+                {hedgeKlipTotal === 1499 && klipRaw < 1499 && <Row label="Minimumspris" value="1.499 kr" sub="Gælder pr. opgave" accent />}
+                <Row label="Total inkl. moms" value={`${fmt(hedgeKlipTotal)} kr`} bold />
               </div>
-            )}
-          </div>
+              <div style={{ margin: '12px 16px 0', background: '#2563EB', borderRadius: 14, padding: 20, boxShadow: '0 4px 16px rgba(37,99,235,0.4)' }}>
+                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Hækkeklip — samlet tilbudspris</div>
+                <div style={{ color: '#fff', fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
+                  {hedgeKlipTotal.toLocaleString('da-DK', { style: 'currency', currency: 'DKK', maximumFractionDigits: 0 })}
+                </div>
+                <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 8 }}>
+                  {hedgeLines.reduce((s,l) => s+l.meters,0).toFixed(0)} m i alt · inkl. kørsel & opstart
+                </div>
+              </div>
+            </>)}
+          </>)}
 
-          {/* Affaldsafhentning */}
-          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-            <SecTitle>Affaldsafhentning</SecTitle>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setHDebris('yes')} style={{
-                flex: 1, borderRadius: 10, padding: '12px 0', fontSize: 14, fontWeight: 700,
-                background: hDebris === 'yes' ? '#EFF6FF' : '#F9FAFB',
-                border: `2px solid ${hDebris === 'yes' ? '#2563EB' : 'transparent'}`,
-                color: hDebris === 'yes' ? '#2563EB' : '#374151',
-              }}>
-                ✓ Ja
-                <div style={{ fontSize: 11, fontWeight: 500, marginTop: 2, color: hDebris === 'yes' ? '#60A5FA' : '#9CA3AF' }}>Normal pris</div>
-              </button>
-              <button onClick={() => setHDebris('no')} style={{
-                flex: 1, borderRadius: 10, padding: '12px 0', fontSize: 14, fontWeight: 700,
-                background: hDebris === 'no' ? '#EFF6FF' : '#F9FAFB',
-                border: `2px solid ${hDebris === 'no' ? '#2563EB' : 'transparent'}`,
-                color: hDebris === 'no' ? '#2563EB' : '#374151',
-              }}>
-                Nej
-                <div style={{ fontSize: 11, fontWeight: 500, marginTop: 2, color: hDebris === 'no' ? '#60A5FA' : '#9CA3AF' }}>-20% rabat</div>
-              </button>
+          {/* ── BESKÆRING (H_SURCHARGE) ────────────────────────────────── */}
+          {hSubType === 'beskæring' && (<>
+            <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+              <SecTitle>Antal meter hæk</SecTitle>
+              <div style={{ display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 10, padding: '10px 14px', gap: 6 }}>
+                <input style={{ flex: 1, fontSize: 26, fontWeight: 800, color: '#111827', background: 'transparent', width: 0 }}
+                  type="number" inputMode="decimal" value={hMeters}
+                  onChange={e => setHMeters(e.target.value)} placeholder="0" />
+                <span style={{ fontSize: 17, fontWeight: 700, color: '#6B7280' }}>m</span>
+              </div>
             </div>
-          </div>
 
-          {/* Beregning + totalpris */}
-          {hedgeTotal > 0 && (
-            <>
+            <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+              <SecTitle>Klipning</SecTitle>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[
+                  { val: 'standard', label: 'Top ELLER 1 side',  sub: '70 kr/m'  },
+                  { val: 'side_top', label: '1 side + top',      sub: '90 kr/m'  },
+                  { val: 'both',     label: 'Begge sider + top', sub: '120 kr/m' },
+                ].map(o => (
+                  <button key={o.val} onClick={() => setHService(o.val)} style={{
+                    borderRadius: 10, padding: '12px 14px',
+                    background: hService === o.val ? '#EFF6FF' : '#F9FAFB',
+                    border: `2px solid ${hService === o.val ? '#2563EB' : 'transparent'}`,
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: hService === o.val ? '#2563EB' : '#374151' }}>{o.label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: hService === o.val ? '#2563EB' : '#9CA3AF' }}>{o.sub}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {[
+              { title: 'Hækhøjde', state: hHeight, setter: setHHeight, opts: [
+                {val:'0-200',label:'0–200',sub:'inkl.'},{val:'201-250',label:'201–250',sub:'+10 kr/m'},
+                {val:'251-300',label:'251–300',sub:'+25 kr/m'},{val:'301-350',label:'301–350',sub:'+35 kr/m'},
+              ]},
+              { title: 'Hækbredde', state: hWidth, setter: setHWidth, opts: [
+                {val:'0-50',label:'0–50',sub:'inkl.'},{val:'51-100',label:'51–100',sub:'+10 kr/m'},
+                {val:'101-150',label:'101–150',sub:'+20 kr/m'},{val:'151-200',label:'151–200',sub:'+30 kr/m'},
+              ]},
+              { title: 'Topklip-bredde', state: hTopCut, setter: setHTopCut, opts: [
+                {val:'0-50',label:'0–50',sub:'inkl.'},{val:'51-100',label:'51–100',sub:'+20 kr/m'},
+                {val:'101-150',label:'101–150',sub:'+25 kr/m'},{val:'151-200',label:'151–200',sub:'+30 kr/m'},
+              ]},
+            ].map(({ title, state, setter, opts }) => (
+              <div key={title} style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+                <SecTitle>{title}</SecTitle>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {opts.map(o => (
+                    <button key={o.val} onClick={() => setter(o.val)} style={{
+                      flex: 1, borderRadius: 10, padding: '9px 4px', fontSize: 11, fontWeight: 700,
+                      background: state === o.val ? '#EFF6FF' : '#F9FAFB',
+                      border: `2px solid ${state === o.val ? '#2563EB' : 'transparent'}`,
+                      color: state === o.val ? '#2563EB' : '#374151',
+                    }}>
+                      {o.label} cm
+                      <div style={{ fontSize: 10, fontWeight: 500, color: state === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 2 }}>{o.sub}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+              <SecTitle>Sideklip-bredde (enkelt side)</SecTitle>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {[
+                  {val:'0-25',label:'0–25',sub:'inkl.'},{val:'26-50',label:'26–50',sub:'+20 kr/m'},
+                  {val:'51-75',label:'51–75',sub:'+40 kr/m'},{val:'76-100',label:'76–100',sub:'+60 kr/m'},
+                  {val:'101-125',label:'101–125',sub:'+80 kr/m'},
+                ].map(o => (
+                  <button key={o.val} onClick={() => setHSideCut(o.val)} style={{
+                    flex: '1 1 calc(33% - 4px)', borderRadius: 10, padding: '9px 4px', fontSize: 11, fontWeight: 700,
+                    background: hSideCut === o.val ? '#EFF6FF' : '#F9FAFB',
+                    border: `2px solid ${hSideCut === o.val ? '#2563EB' : 'transparent'}`,
+                    color: hSideCut === o.val ? '#2563EB' : '#374151',
+                  }}>
+                    {o.label} cm
+                    <div style={{ fontSize: 10, fontWeight: 500, color: hSideCut === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 2 }}>{o.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+              <SecTitle>Svær adgang</SecTitle>
+              <button onClick={() => setHDifficult(v => !v)} style={{
+                width: '100%', borderRadius: 10, padding: '12px 14px',
+                background: hDifficult ? '#EFF6FF' : '#F9FAFB',
+                border: `2px solid ${hDifficult ? '#2563EB' : 'transparent'}`,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: hDifficult ? '#2563EB' : '#374151' }}>{hDifficult ? '✓ ' : ''}Svær adgang</div>
+                  <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>+50 kr/m</div>
+                </div>
+              </button>
+              {hDifficult && (
+                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '8px 12px', gap: 6 }}>
+                  <input type="number" inputMode="decimal" placeholder="0" value={hDiffM} onChange={e => setHDiffM(e.target.value)}
+                    style={{ flex: 1, fontSize: 16, fontWeight: 700, background: 'transparent' }} />
+                  <span style={{ fontSize: 12, color: '#9CA3AF' }}>meter</span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+              <SecTitle>Affaldsafhentning</SecTitle>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setHDebris('yes')} style={{
+                  flex: 1, borderRadius: 10, padding: '12px 0', fontSize: 14, fontWeight: 700,
+                  background: hDebris === 'yes' ? '#EFF6FF' : '#F9FAFB',
+                  border: `2px solid ${hDebris === 'yes' ? '#2563EB' : 'transparent'}`,
+                  color: hDebris === 'yes' ? '#2563EB' : '#374151',
+                }}>
+                  ✓ Ja
+                  <div style={{ fontSize: 11, fontWeight: 500, marginTop: 2, color: hDebris === 'yes' ? '#60A5FA' : '#9CA3AF' }}>Normal pris</div>
+                </button>
+                <button onClick={() => setHDebris('no')} style={{
+                  flex: 1, borderRadius: 10, padding: '12px 0', fontSize: 14, fontWeight: 700,
+                  background: hDebris === 'no' ? '#EFF6FF' : '#F9FAFB',
+                  border: `2px solid ${hDebris === 'no' ? '#2563EB' : 'transparent'}`,
+                  color: hDebris === 'no' ? '#2563EB' : '#374151',
+                }}>
+                  Nej
+                  <div style={{ fontSize: 11, fontWeight: 500, marginTop: 2, color: hDebris === 'no' ? '#60A5FA' : '#9CA3AF' }}>-20% rabat</div>
+                </button>
+              </div>
+            </div>
+
+            {beskæringTotal > 0 && (<>
               <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
                 <SecTitle>Beregning</SecTitle>
                 <Row label="Basis" value={`${hBase} kr/m`} sub={hService === 'standard' ? 'Top el. 1 side' : hService === 'side_top' ? '1 side + top' : 'Begge sider + top'} />
@@ -762,21 +958,19 @@ export default function Tilbud() {
                 <Row label={`${fmt(hM, 1)} m × ${hPricePerM} kr/m`} value={`${fmt(hM * hPricePerM)} kr`} />
                 {hDiffFee > 0 && <Row label={`Svær adgang (${parseFloat(hDiffM)||0} m)`} value={`+${fmt(hDiffFee)} kr`} accent />}
                 {hDebris === 'no' && <Row label="Ingen afhentning" value="-20%" sub="Rabat" accent />}
-                <Row label="Total inkl. moms" value={`${fmt(hedgeTotal)} kr`} bold />
+                <Row label="Total inkl. moms" value={`${fmt(beskæringTotal)} kr`} bold />
               </div>
               <div style={{ margin: '12px 16px 0', background: '#2563EB', borderRadius: 14, padding: 20, boxShadow: '0 4px 16px rgba(37,99,235,0.4)' }}>
-                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
-                  {hSubType === 'beskæring' ? 'Beskæring' : 'Hækkeklip'} — samlet tilbudspris
-                </div>
+                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Beskæring — samlet tilbudspris</div>
                 <div style={{ color: '#fff', fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
-                  {hedgeTotal.toLocaleString('da-DK', { style: 'currency', currency: 'DKK', maximumFractionDigits: 0 })}
+                  {beskæringTotal.toLocaleString('da-DK', { style: 'currency', currency: 'DKK', maximumFractionDigits: 0 })}
                 </div>
                 <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 8 }}>
                   {fmt(hM, 1)} m · {hPricePerM} kr/m{hDiffFee > 0 ? ' + svær adgang' : ''}{hDebris === 'no' ? ' · -20%' : ''}
                 </div>
               </div>
-            </>
-          )}
+            </>)}
+          </>)}
         </>
       )}
 
@@ -815,6 +1009,12 @@ export default function Tilbud() {
                     style={{ flex: 1, background: isOpen ? '#F3F4F6' : '#2563EB', color: isOpen ? '#6B7280' : '#fff', borderRadius: 10, padding: '10px 0', fontSize: 13, fontWeight: 700 }}
                   >
                     {isOpen ? '× Annuller' : '+ Opret aftale'}
+                  </button>
+                  <button
+                    onClick={() => editQuote(q)}
+                    style={{ background: '#EFF6FF', color: '#2563EB', borderRadius: 10, padding: '10px 14px', fontSize: 13, fontWeight: 700 }}
+                  >
+                    Rediger
                   </button>
                   <button
                     onClick={() => deleteQuote(q.id)}
