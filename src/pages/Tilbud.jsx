@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TopBar from '../components/TopBar.jsx';
-import { getCustomers, getAppointments, saveAppointments, getQuotes, saveQuotes, newId } from '../storage.js';
+import { getCustomers, saveCustomers, getAppointments, saveAppointments, getQuotes, saveQuotes, newId } from '../storage.js';
 
 // ── Vinduespriser fra prisliste ────────────────────────────────────────────
 const WINDOW_TIERS = [
@@ -94,6 +94,10 @@ export default function Tilbud() {
   const [savedMsg, setSavedMsg] = useState(false);
   const [quoteApptOpen, setQuoteApptOpen] = useState(null);
   const [quoteApptDate, setQuoteApptDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [showNewCust,   setShowNewCust]   = useState(false);
+  const [newCustName,   setNewCustName]   = useState('');
+  const [newCustPhone,  setNewCustPhone]  = useState('');
+  const [newCustAddr,   setNewCustAddr]   = useState('');
 
   const loadQuotes = () => setQuotes([...getQuotes()].reverse());
   useEffect(() => { setCustomers(getCustomers()); loadQuotes(); }, []);
@@ -302,6 +306,17 @@ export default function Tilbud() {
     }]);
     deleteQuote(q.id);
     setQuoteApptOpen(null);
+  };
+
+  const createNewCustomer = (onCreated) => {
+    if (!newCustName.trim()) return;
+    const c = { id: newId(), name: newCustName.trim(), phone: newCustPhone.trim(), address: newCustAddr.trim(), email: '', company: '', notes: '' };
+    const updated = [...getCustomers(), c];
+    saveCustomers(updated);
+    setCustomers(updated);
+    onCreated(c.id);
+    setNewCustName(''); setNewCustPhone(''); setNewCustAddr('');
+    setShowNewCust(false);
   };
 
   const SecTitle = ({ children }) => (
@@ -834,22 +849,14 @@ export default function Tilbud() {
           <div style={{ fontSize: 12, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
             Tilknyt kunde
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto', marginBottom: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto', marginBottom: 8 }}>
             <button onClick={() => setSaveCustomerId('')} style={{
               padding: '10px 14px', borderRadius: 10, textAlign: 'left', fontSize: 14,
               fontWeight: saveCustomerId === '' ? 700 : 500,
               background: saveCustomerId === '' ? '#EFF6FF' : '#F9FAFB',
               border: `2px solid ${saveCustomerId === '' ? '#2563EB' : 'transparent'}`,
               color: saveCustomerId === '' ? '#2563EB' : '#6B7280',
-            }}>
-              Ingen kunde
-            </button>
-            {customers.length === 0 && (
-              <div style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>
-                Ingen kunder endnu —{' '}
-                <span onClick={() => navigate('/kunder/ny')} style={{ color: '#2563EB', fontWeight: 600, cursor: 'pointer' }}>opret kunde</span>
-              </div>
-            )}
+            }}>Ingen kunde</button>
             {customers.map(c => (
               <button key={c.id} onClick={() => setSaveCustomerId(c.id)} style={{
                 padding: '10px 14px', borderRadius: 10, textAlign: 'left', fontSize: 14,
@@ -863,6 +870,29 @@ export default function Tilbud() {
               </button>
             ))}
           </div>
+          <button onClick={() => setShowNewCust(v => !v)} style={{
+            width: '100%', borderRadius: 10, padding: '10px 14px', marginBottom: 14,
+            background: showNewCust ? '#F3F4F6' : '#F0FDF4',
+            border: `2px solid ${showNewCust ? 'transparent' : '#10B981'}`,
+            color: showNewCust ? '#6B7280' : '#059669', fontSize: 14, fontWeight: 700, textAlign: 'left',
+          }}>
+            {showNewCust ? '× Annuller' : '+ Ny kunde'}
+          </button>
+          {showNewCust && (
+            <div style={{ background: '#F9FAFB', borderRadius: 12, padding: 12, marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <input placeholder="Navn *" value={newCustName} onChange={e => setNewCustName(e.target.value)}
+                style={{ fontSize: 15, fontWeight: 600, background: '#fff', borderRadius: 8, padding: '10px 12px', border: '2px solid #E5E7EB', width: '100%', boxSizing: 'border-box' }} />
+              <input placeholder="Telefon (valgfrit)" value={newCustPhone} onChange={e => setNewCustPhone(e.target.value)}
+                inputMode="tel"
+                style={{ fontSize: 14, background: '#fff', borderRadius: 8, padding: '10px 12px', border: '2px solid #E5E7EB', width: '100%', boxSizing: 'border-box' }} />
+              <input placeholder="Adresse (valgfrit)" value={newCustAddr} onChange={e => setNewCustAddr(e.target.value)}
+                style={{ fontSize: 14, background: '#fff', borderRadius: 8, padding: '10px 12px', border: '2px solid #E5E7EB', width: '100%', boxSizing: 'border-box' }} />
+              <button onClick={() => createNewCustomer(id => setSaveCustomerId(id))} disabled={!newCustName.trim()} style={{
+                background: newCustName.trim() ? '#10B981' : '#E5E7EB', color: newCustName.trim() ? '#fff' : '#9CA3AF',
+                borderRadius: 8, padding: '10px 0', fontSize: 14, fontWeight: 700,
+              }}>Opret kunde</button>
+            </div>
+          )}
 
           {/* Opret aftale toggle */}
           <button onClick={() => setCreateAppt(v => !v)} style={{
