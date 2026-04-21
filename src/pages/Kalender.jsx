@@ -55,6 +55,8 @@ export default function Kalender() {
   const [showMove,  setShowMove]  = useState(false);
   const [moveTarget, setMoveTarget] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [multiOff,  setMultiOff]  = useState(false);
+  const [pendingOff, setPendingOff] = useState(new Set());
 
   useEffect(() => {
     const allAppts = getAppointments();
@@ -129,6 +131,15 @@ export default function Kalender() {
     setMoveTarget(null);
     setSelectedDay(null);
     setRefreshKey(k => k + 1);
+  };
+
+  const applyPendingOff = () => {
+    const next = new Set(offDays);
+    pendingOff.forEach(d => next.add(d));
+    setOffDays(next);
+    saveOffDays(next);
+    setPendingOff(new Set());
+    setMultiOff(false);
   };
 
   const firstDow  = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
@@ -282,41 +293,55 @@ export default function Kalender() {
               <div key={`e${i}`} style={{ minHeight: 62, borderBottom: '1px solid #F3F4F6', borderRight: borderR, background: '#FAFAFA' }} />
             );
 
-            const d      = new Date(viewYear, viewMonth, day);
-            const dStr   = toDateStr(d);
-            const isToday = d.getTime() === today.getTime();
-            const isSun  = d.getDay() === 0;
-            const isSel  = selectedDay && d.getTime() === selectedDay.getTime();
-            const isOff  = offDays.has(dStr);
-            const dayAppts = apptsByDay[dStr] || [];
-            const isPast = d < today;
-            const totalMin = dayAppts.reduce((s, a) => s + (a.duration || 0), 0) + dayAppts.length * travelTime;
-            const pct    = workHours > 0 && totalMin > 0 ? Math.min(100, Math.round(totalMin / workHours * 100)) : 0;
+            const d         = new Date(viewYear, viewMonth, day);
+            const dStr      = toDateStr(d);
+            const isToday   = d.getTime() === today.getTime();
+            const isSun     = d.getDay() === 0;
+            const isSel     = selectedDay && d.getTime() === selectedDay.getTime();
+            const isOff     = offDays.has(dStr);
+            const isPending = multiOff && pendingOff.has(dStr);
+            const dayAppts  = apptsByDay[dStr] || [];
+            const isPast    = d < today;
+            const totalMin  = dayAppts.reduce((s, a) => s + (a.duration || 0), 0) + dayAppts.length * travelTime;
+            const pct       = workHours > 0 && totalMin > 0 ? Math.min(100, Math.round(totalMin / workHours * 100)) : 0;
 
             return (
               <div key={day}
-                onClick={() => setSelectedDay(isSel ? null : d)}
+                onClick={() => {
+                  if (multiOff) {
+                    const next = new Set(pendingOff);
+                    if (next.has(dStr)) next.delete(dStr); else next.add(dStr);
+                    setPendingOff(next);
+                    return;
+                  }
+                  setSelectedDay(isSel ? null : d);
+                }}
                 style={{
                   minHeight: 62, padding: '5px 3px 0', cursor: 'pointer',
-                  background: isOff ? '#FFF1F2' : isSel ? '#EFF6FF' : '#fff',
+                  background: isPending ? '#FEF3C7' : isOff ? '#FFF1F2' : isSel ? '#EFF6FF' : '#fff',
                   borderBottom: '1px solid #F3F4F6', borderRight: borderR,
                   opacity: isPast && !isToday ? 0.5 : 1,
                   display: 'flex', flexDirection: 'column',
+                  outline: isPending ? '2px solid #F59E0B' : 'none',
+                  outlineOffset: '-2px',
                 }}
               >
                 {/* Dato-cirkel */}
                 <div style={{
                   width: 26, height: 26, borderRadius: '50%', margin: '0 auto 2px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: isToday ? '#2563EB' : isSel ? '#DBEAFE' : 'transparent',
-                  fontSize: 13, fontWeight: isToday ? 800 : isSel ? 700 : 400,
-                  color: isToday ? '#fff' : isSun ? '#EF4444' : isOff ? '#EF4444' : '#374151',
+                  background: isPending ? '#F59E0B' : isToday ? '#2563EB' : isSel ? '#DBEAFE' : 'transparent',
+                  fontSize: 13, fontWeight: isToday || isPending ? 800 : isSel ? 700 : 400,
+                  color: isPending ? '#fff' : isToday ? '#fff' : isSun ? '#EF4444' : isOff ? '#EF4444' : '#374151',
                 }}>
                   {day}
                 </div>
 
-                {isOff && (
+                {isOff && !isPending && (
                   <div style={{ textAlign: 'center', fontSize: 9, fontWeight: 700, color: '#EF4444', letterSpacing: 0.2 }}>FRI</div>
+                )}
+                {isPending && (
+                  <div style={{ textAlign: 'center', fontSize: 9, fontWeight: 700, color: '#D97706', letterSpacing: 0.2 }}>✓</div>
                 )}
 
                 {!isOff && dayAppts.length > 0 && (
@@ -341,34 +366,92 @@ export default function Kalender() {
         </div>
       </div>
 
-      {/* Forklaring */}
-      <div style={{ display: 'flex', gap: 14, padding: '10px 14px 4px', flexWrap: 'wrap' }}>
-        {[
-          { color: '#2563EB', shape: 'circle', label: 'Aftale' },
-          { color: '#FFF1F2', border: '#EF4444', shape: 'rect', label: 'Fri dag' },
-          { color: '#10B981', shape: 'bar', label: '<70%' },
-          { color: '#F59E0B', shape: 'bar', label: '70-99%' },
-          { color: '#EF4444', shape: 'bar', label: '100%+' },
-        ].map(it => (
-          <div key={it.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#6B7280' }}>
-            {it.shape === 'circle' && <div style={{ width: 8, height: 8, borderRadius: '50%', background: it.color }} />}
-            {it.shape === 'rect'   && <div style={{ width: 10, height: 10, borderRadius: 2, background: it.color, border: `1px solid ${it.border}` }} />}
-            {it.shape === 'bar'    && <div style={{ width: 14, height: 4, borderRadius: 2, background: it.color }} />}
-            {it.label}
-          </div>
-        ))}
-      </div>
-
-      {/* Tilføj-knap */}
-      <div style={{ padding: '6px 12px 0' }}>
-        <button onClick={() => navigate('/aftaler/ny')} style={{
-          width: '100%', background: '#2563EB', color: '#fff', borderRadius: 14,
-          padding: '14px 0', fontSize: 16, fontWeight: 700,
-          boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
-        }}>
-          + Ny opgave
+      {/* Forklaring + multiselect-toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px 4px', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {[
+            { color: '#2563EB', shape: 'circle', label: 'Aftale' },
+            { color: '#FFF1F2', border: '#EF4444', shape: 'rect', label: 'Fri dag' },
+            { color: '#10B981', shape: 'bar', label: '<70%' },
+            { color: '#F59E0B', shape: 'bar', label: '70-99%' },
+            { color: '#EF4444', shape: 'bar', label: '100%+' },
+          ].map(it => (
+            <div key={it.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#6B7280' }}>
+              {it.shape === 'circle' && <div style={{ width: 8, height: 8, borderRadius: '50%', background: it.color }} />}
+              {it.shape === 'rect'   && <div style={{ width: 10, height: 10, borderRadius: 2, background: it.color, border: `1px solid ${it.border}` }} />}
+              {it.shape === 'bar'    && <div style={{ width: 14, height: 4, borderRadius: 2, background: it.color }} />}
+              {it.label}
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={() => { setMultiOff(v => !v); setPendingOff(new Set()); }}
+          style={{
+            fontSize: 12, fontWeight: 700, borderRadius: 20, padding: '5px 12px',
+            background: multiOff ? '#FEF3C7' : '#F3F4F6',
+            color: multiOff ? '#D97706' : '#6B7280',
+            border: multiOff ? '1.5px solid #F59E0B' : '1.5px solid transparent',
+          }}
+        >
+          {multiOff ? '× Afbryd' : '+ Vælg fridage'}
         </button>
       </div>
+
+      {/* Multi-off instruktion */}
+      {multiOff && (
+        <div style={{ margin: '0 10px 6px', background: '#FEF3C7', borderRadius: 10, padding: '9px 14px', fontSize: 13, color: '#92400E', fontWeight: 500, border: '1px solid #FCD34D' }}>
+          Tryk på dage for at markere dem som fridage
+        </div>
+      )}
+
+      {/* Tilføj-knap */}
+      {!multiOff && (
+        <div style={{ padding: '6px 12px 0' }}>
+          <button onClick={() => navigate('/aftaler/ny')} style={{
+            width: '100%', background: '#2563EB', color: '#fff', borderRadius: 14,
+            padding: '14px 0', fontSize: 16, fontWeight: 700,
+            boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
+          }}>
+            + Ny opgave
+          </button>
+        </div>
+      )}
+
+      {/* Multi-off bekræftelsesbar */}
+      {multiOff && createPortal(
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 8000,
+          background: '#fff', borderTop: '1px solid #E5E7EB',
+          padding: '12px 16px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+          display: 'flex', gap: 10, alignItems: 'center',
+          boxShadow: '0 -4px 20px rgba(0,0,0,0.1)',
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: pendingOff.size > 0 ? '#D97706' : '#9CA3AF' }}>
+              {pendingOff.size > 0 ? `${pendingOff.size} dag${pendingOff.size !== 1 ? 'e' : ''} valgt` : 'Ingen dage valgt'}
+            </div>
+            <div style={{ fontSize: 12, color: '#9CA3AF' }}>Tryk på datoer i kalenderen</div>
+          </div>
+          <button
+            onClick={() => { setPendingOff(new Set()); setMultiOff(false); }}
+            style={{ padding: '10px 16px', borderRadius: 12, background: '#F3F4F6', color: '#6B7280', fontSize: 14, fontWeight: 700 }}
+          >
+            Annuller
+          </button>
+          <button
+            onClick={applyPendingOff}
+            disabled={pendingOff.size === 0}
+            style={{
+              padding: '10px 18px', borderRadius: 12, fontSize: 14, fontWeight: 700,
+              background: pendingOff.size > 0 ? '#EF4444' : '#F3F4F6',
+              color: pendingOff.size > 0 ? '#fff' : '#9CA3AF',
+            }}
+          >
+            Gem fridage
+          </button>
+        </div>,
+        document.body
+      )}
 
       {/* Dag-bottomsheet */}
       {selectedDay && createPortal(
