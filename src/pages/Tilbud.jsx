@@ -86,13 +86,17 @@ export default function Tilbud() {
 
   // Gem tilbud
   const [customers, setCustomers] = useState([]);
+  const [quotes, setQuotes] = useState([]);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveCustomerId, setSaveCustomerId] = useState('');
   const [createAppt, setCreateAppt] = useState(false);
   const [apptDate, setApptDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [savedMsg, setSavedMsg] = useState(false);
+  const [quoteApptOpen, setQuoteApptOpen] = useState(null);
+  const [quoteApptDate, setQuoteApptDate] = useState(() => new Date().toISOString().split('T')[0]);
 
-  useEffect(() => { setCustomers(getCustomers()); }, []);
+  const loadQuotes = () => setQuotes([...getQuotes()].reverse());
+  useEffect(() => { setCustomers(getCustomers()); loadQuotes(); }, []);
 
   // ── Init Leaflet ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -272,7 +276,32 @@ export default function Tilbud() {
     }
     setSavedMsg(true);
     setSaveOpen(false);
+    loadQuotes();
     setTimeout(() => setSavedMsg(false), 4000);
+  };
+
+  const deleteQuote = (id) => {
+    saveQuotes(getQuotes().filter(q => q.id !== id));
+    loadQuotes();
+  };
+
+  const createApptFromQuote = (q) => {
+    const cust = customers.find(c => c.id === q.customerId);
+    const label = q.type === 'grass' ? 'Græsslåning' : q.type === 'window' ? 'Vinduespudsning' : 'Hækkeklip';
+    saveAppointments([...getAppointments(), {
+      id: newId(),
+      customerId: q.customerId || undefined,
+      title: cust ? `${label} – ${cust.name}` : label,
+      date: quoteApptDate,
+      duration: 0,
+      recurrence: 'none',
+      price: q.totalPrice,
+      color: q.type === 'grass' ? 'green' : q.type === 'hedge' ? 'teal' : 'blue',
+      equipment: q.type === 'grass' ? ['Plæneklipper'] : q.type === 'hedge' ? ['Hækkeklipper'] : [],
+      notes: '',
+    }]);
+    deleteQuote(q.id);
+    setQuoteApptOpen(null);
   };
 
   const SecTitle = ({ children }) => (
@@ -295,39 +324,28 @@ export default function Tilbud() {
 
       {/* Service-type toggle */}
       <div style={{ padding: '12px 16px 0' }}>
-        <div style={{ display: 'flex', background: '#F3F4F6', borderRadius: 12, padding: 4, gap: 4 }}>
-          <button onClick={() => setServiceType('grass')} style={{
-            flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 13, fontWeight: 700,
-            background: serviceType === 'grass' ? '#fff' : 'transparent',
-            color: serviceType === 'grass' ? '#2563EB' : '#6B7280',
-            boxShadow: serviceType === 'grass' ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
-            transition: 'all 0.15s',
-          }}>
-            🌿 Græsslåning
-          </button>
-          <button onClick={() => setServiceType('window')} style={{
-            flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 13, fontWeight: 700,
-            background: serviceType === 'window' ? '#fff' : 'transparent',
-            color: serviceType === 'window' ? '#2563EB' : '#6B7280',
-            boxShadow: serviceType === 'window' ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
-            transition: 'all 0.15s',
-          }}>
-            🪟 Vinduespuds
-          </button>
-          <button onClick={() => setServiceType('hedge')} style={{
-            flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 13, fontWeight: 700,
-            background: serviceType === 'hedge' ? '#fff' : 'transparent',
-            color: serviceType === 'hedge' ? '#2563EB' : '#6B7280',
-            boxShadow: serviceType === 'hedge' ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
-            transition: 'all 0.15s',
-          }}>
-            ✂️ Hækkeklip
-          </button>
+        <div style={{ display: 'flex', background: '#F3F4F6', borderRadius: 12, padding: 4, gap: 3 }}>
+          {[
+            { id: 'grass',  label: '🌿 Græs'  },
+            { id: 'window', label: '🪟 Vindue' },
+            { id: 'hedge',  label: '✂️ Hæk'   },
+            { id: 'saved',  label: quotes.length > 0 ? `📋 ${quotes.length}` : '📋 Gemte' },
+          ].map(t => (
+            <button key={t.id} onClick={() => { setServiceType(t.id); if (t.id === 'saved') loadQuotes(); }} style={{
+              flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 12, fontWeight: 700,
+              background: serviceType === t.id ? '#fff' : 'transparent',
+              color: serviceType === t.id ? '#2563EB' : '#6B7280',
+              boxShadow: serviceType === t.id ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
+              transition: 'all 0.15s',
+            }}>
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Adresse + kort (kun for græs og vindue) */}
-      {serviceType !== 'hedge' && (<>
+      {serviceType !== 'hedge' && serviceType !== 'saved' && (<>
       <div style={{ padding: '12px 16px 0' }}>
         <div style={{ display: 'flex', gap: 8 }}>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#fff', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 6px rgba(0,0,0,0.06)', gap: 8 }}>
@@ -725,8 +743,71 @@ export default function Tilbud() {
         </>
       )}
 
+      {/* ══ GEMTE TILBUD ═════════════════════════════════════════════════════ */}
+      {serviceType === 'saved' && (
+        <div style={{ padding: '12px 16px 0' }}>
+          {quotes.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 0', color: '#9CA3AF' }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>Ingen gemte tilbud endnu</div>
+              <div style={{ fontSize: 13, marginTop: 4 }}>Gem et tilbud fra Græs, Vindue eller Hæk</div>
+            </div>
+          ) : quotes.map(q => {
+            const cust     = customers.find(c => c.id === q.customerId);
+            const typeIcon  = q.type === 'grass' ? '🌿' : q.type === 'window' ? '🪟' : '✂️';
+            const typeLabel = q.type === 'grass' ? 'Græsslåning' : q.type === 'window' ? 'Vinduespudsning' : 'Hækkeklip';
+            const isOpen    = quoteApptOpen === q.id;
+            return (
+              <div key={q.id} style={{ background: '#fff', borderRadius: 14, padding: 16, marginBottom: 10, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{typeIcon} {typeLabel}</div>
+                    {cust && <div style={{ fontSize: 13, color: '#6B7280', marginTop: 3 }}>👤 {cust.name}</div>}
+                    <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 3 }}>
+                      {new Date(q.createdAt).toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#2563EB' }}>
+                    {q.totalPrice.toLocaleString('da-DK')} kr
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => { setQuoteApptOpen(isOpen ? null : q.id); setQuoteApptDate(new Date().toISOString().split('T')[0]); }}
+                    style={{ flex: 1, background: isOpen ? '#F3F4F6' : '#2563EB', color: isOpen ? '#6B7280' : '#fff', borderRadius: 10, padding: '10px 0', fontSize: 13, fontWeight: 700 }}
+                  >
+                    {isOpen ? '× Annuller' : '+ Opret aftale'}
+                  </button>
+                  <button
+                    onClick={() => deleteQuote(q.id)}
+                    style={{ background: '#FEE2E2', color: '#EF4444', borderRadius: 10, padding: '10px 14px', fontSize: 13, fontWeight: 700 }}
+                  >
+                    Slet
+                  </button>
+                </div>
+                {isOpen && (
+                  <div style={{ marginTop: 10, background: '#F9FAFB', borderRadius: 10, padding: 12 }}>
+                    <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 6, fontWeight: 600 }}>Aftaledato</div>
+                    <input
+                      type="date" value={quoteApptDate} onChange={e => setQuoteApptDate(e.target.value)}
+                      style={{ width: '100%', fontSize: 15, fontWeight: 600, background: '#fff', borderRadius: 8, padding: '10px 12px', border: '2px solid #E5E7EB', boxSizing: 'border-box', marginBottom: 10 }}
+                    />
+                    <button
+                      onClick={() => createApptFromQuote(q)}
+                      style={{ width: '100%', background: '#10B981', color: '#fff', borderRadius: 10, padding: '12px 0', fontSize: 14, fontWeight: 700, boxShadow: '0 4px 10px rgba(16,185,129,0.3)' }}
+                    >
+                      ✓ Bekræft aftale
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* ══ GEM TILBUD ═══════════════════════════════════════════════════════ */}
-      {currentPrice > 0 && (
+      {currentPrice > 0 && serviceType !== 'saved' && (
         <div style={{ padding: '10px 16px 0' }}>
           {savedMsg ? (
             <div style={{ background: '#D1FAE5', borderRadius: 14, padding: 16, textAlign: 'center' }}>
