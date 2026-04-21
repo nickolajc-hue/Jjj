@@ -152,8 +152,8 @@ export default function Kalender() {
   const selAppts  = selStr ? (apptsByDay[selStr] || []) : [];
   const selIsOff  = selStr ? offDays.has(selStr) : false;
   const selIsToday = selectedDay && selectedDay.getTime() === today.getTime();
-  const selWorkMin  = selAppts.reduce((s, a) => s + (a.duration || 0), 0);
-  const selTravelMin = selAppts.length * travelTime;
+  const selWorkMin   = selAppts.reduce((s, a) => s + (a.duration || 0), 0);
+  const selTravelMin = selAppts.length > 0 ? (selAppts.length + 1) * travelTime : 0;
   const selTotalMin = selWorkMin + selTravelMin;
   const selRemMin   = workHours - selTotalMin;
   const selPct      = workHours > 0 ? Math.min(100, Math.round(selTotalMin / workHours * 100)) : 0;
@@ -228,7 +228,7 @@ export default function Kalender() {
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>Kørsel pr. opgave</div>
               <div style={{ fontSize: 12, color: '#9CA3AF' }}>
-                {travelTime > 0 ? `${travelTime} min (frem + hjem)` : 'Ikke medregnet'}
+                {travelTime > 0 ? `${travelTime} min pr. tur (inkl. hjemtur)` : 'Ikke medregnet'}
               </div>
             </div>
           </div>
@@ -242,7 +242,7 @@ export default function Kalender() {
         {editTT && (
           <div style={{ padding: '0 14px 14px', borderTop: '1px solid #F3F4F6' }}>
             <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 8, marginTop: 10 }}>
-              Gennemsnitlig kørselstid pr. opgave (inkl. hjemkørsel):
+              Gennemsnitlig kørsel pr. tur. Eks. 3 aftaler = 4 ture (hjem→job→job→job→hjem):
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
               <button onClick={() => saveTT(0)} style={{
@@ -302,7 +302,7 @@ export default function Kalender() {
             const isPending = multiOff && pendingOff.has(dStr);
             const dayAppts  = apptsByDay[dStr] || [];
             const isPast    = d < today;
-            const totalMin  = dayAppts.reduce((s, a) => s + (a.duration || 0), 0) + dayAppts.length * travelTime;
+            const totalMin  = dayAppts.reduce((s, a) => s + (a.duration || 0), 0) + (dayAppts.length > 0 ? (dayAppts.length + 1) * travelTime : 0);
             const pct       = workHours > 0 && totalMin > 0 ? Math.min(100, Math.round(totalMin / workHours * 100)) : 0;
 
             return (

@@ -195,6 +195,7 @@ export default function MinDag() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [totalKm, setTotalKm] = useState(0);
+  const [homeReturnKm, setHomeReturnKm] = useState(0);
 
   const nowDay = new Date(); nowDay.setHours(0, 0, 0, 0);
   const isToday = selectedDate.getTime() === nowDay.getTime();
@@ -222,6 +223,7 @@ export default function MinDag() {
     if (dayAppts.length === 0) {
       setAppointments([]);
       setTotalKm(0);
+      setHomeReturnKm(0);
       setLoading(false);
       return;
     }
@@ -236,13 +238,19 @@ export default function MinDag() {
     if (!homeCoords) {
       setAppointments(enriched.map(a => ({ ...a, distFromPrev: null })).sort((a, b) => new Date(a.date) - new Date(b.date)));
       setTotalKm(0);
+      setHomeReturnKm(0);
       setLoading(false);
       return;
     }
 
     const routed = nearestNeighborRoute(homeCoords, enriched);
-    const km = routed.reduce((sum, a) => sum + (a.distFromPrev || 0), 0);
-    setTotalKm(km);
+    const routedKm = routed.reduce((sum, a) => sum + (a.distFromPrev || 0), 0);
+    const lastWithCoords = [...routed].reverse().find(a => a.coords);
+    const returnKm = lastWithCoords
+      ? haversine(lastWithCoords.coords.lat, lastWithCoords.coords.lng, homeCoords.lat, homeCoords.lng)
+      : 0;
+    setHomeReturnKm(returnKm);
+    setTotalKm(routedKm + returnKm);
     setAppointments(routed);
     setLoading(false);
   }, [homeAddress, selectedDate]);
@@ -355,8 +363,25 @@ export default function MinDag() {
             <DagsPlan appointments={appointments} totalKm={totalKm} startTime={startTime} onStartTimeChange={saveStartTime} />
             <PackingList appointments={appointments} date={selectedDate} />
             {appointments.map((a, i) => (
-              <AppCard key={a.id} appt={a} index={i} isFirst={i === 0} isLast={i === appointments.length - 1} date={selectedDate} />
+              <AppCard key={a.id} appt={a} index={i} isFirst={i === 0} isLast={i === appointments.length - 1 && homeReturnKm === 0} date={selectedDate} />
             ))}
+            {homeReturnKm > 0 && (
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 36, flexShrink: 0 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 18, background: '#6B7280', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
+                    🏠
+                  </div>
+                </div>
+                <div style={{ flex: 1, background: '#F9FAFB', borderRadius: 14, padding: '12px 14px', marginBottom: 10, boxShadow: '0 1px 6px rgba(0,0,0,0.06)', border: '1px solid #E5E7EB' }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: '#374151' }}>Hjem</div>
+                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 1 }}>{homeAddress}</div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#FFF7ED', borderRadius: 8, padding: '3px 10px', marginTop: 8 }}>
+                    <span style={{ fontSize: 12 }}>🚗</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B' }}>~{homeReturnKm.toFixed(1)} km retur</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
