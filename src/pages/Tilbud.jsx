@@ -80,6 +80,7 @@ export default function Tilbud() {
   const [hDifficult, setHDifficult] = useState(false);
   const [hDiffM,     setHDiffM]     = useState('');
   const [hDebris,    setHDebris]    = useState('yes');
+  const [hSubType,   setHSubType]   = useState('klip'); // 'klip'|'beskæring'
 
   // Gem tilbud
   const [customers, setCustomers] = useState([]);
@@ -236,14 +237,21 @@ export default function Tilbud() {
                      : 0;
 
   const saveQuoteAndAppt = () => {
-    const label = serviceType === 'grass' ? 'Græsslåning' : serviceType === 'window' ? 'Vinduespudsning' : 'Hækkeklip';
+    const hedgeLabel = hSubType === 'beskæring' ? 'Beskæring' : 'Hækkeklip';
+    const label = serviceType === 'grass' ? 'Græsslåning' : serviceType === 'window' ? 'Vinduespudsning' : hedgeLabel;
     const cust  = customers.find(c => c.id === saveCustomerId);
+    const params = serviceType === 'hedge'
+      ? { subType: hSubType, meters: hMeters, service: hService, height: hHeight, width: hWidth, topCut: hTopCut, sideCut: hSideCut, difficult: hDifficult, diffM: hDiffM, debris: hDebris }
+      : serviceType === 'grass'
+      ? { m2: manualM2, speed, rate, setupTime, isNewCustomer }
+      : { m2: manualM2 };
     saveQuotes([...getQuotes(), {
       id: newId(),
       type: serviceType,
       createdAt: new Date().toISOString(),
       customerId: saveCustomerId || null,
       totalPrice: currentPrice,
+      params,
     }]);
     if (createAppt) {
       saveAppointments([...getAppointments(), {
@@ -254,8 +262,8 @@ export default function Tilbud() {
         duration: 0,
         recurrence: 'none',
         price: currentPrice,
-        color: serviceType === 'grass' ? 'green' : 'blue',
-        equipment: serviceType === 'grass' ? ['Plæneklipper'] : [],
+        color: serviceType === 'grass' ? 'green' : serviceType === 'hedge' ? 'teal' : 'blue',
+        equipment: serviceType === 'grass' ? ['Plæneklipper'] : serviceType === 'hedge' ? ['Hækkeklipper'] : [],
         notes: '',
       }]);
     }
@@ -272,7 +280,8 @@ export default function Tilbud() {
 
   const createApptFromQuote = (q) => {
     const cust = customers.find(c => c.id === q.customerId);
-    const label = q.type === 'grass' ? 'Græsslåning' : q.type === 'window' ? 'Vinduespudsning' : 'Hækkeklip';
+    const hedgeLabel = q.params?.subType === 'beskæring' ? 'Beskæring' : 'Hækkeklip';
+    const label = q.type === 'grass' ? 'Græsslåning' : q.type === 'window' ? 'Vinduespudsning' : hedgeLabel;
     saveAppointments([...getAppointments(), {
       id: newId(),
       customerId: q.customerId || undefined,
@@ -542,196 +551,228 @@ export default function Tilbud() {
         </>
       )}
 
-      {/* ══ HÆKKEKLIP ════════════════════════════════════════════════════════ */}
+      {/* ══ HÆKKEKLIP / BESKÆRING ═══════════════════════════════════════════ */}
       {serviceType === 'hedge' && (
         <>
-          {/* Meter-inputs per højde */}
-          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-            <SecTitle>Antal meter hæk</SecTitle>
-            {/* Kolonneoverskrifter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <div style={{ flex: 1 }} />
-              <div style={{ width: 80, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#6B7280' }}>1 SIDE</div>
-              <div style={{ width: 80, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#6B7280' }}>2 SIDER</div>
-            </div>
-            {HEDGE_TIERS.map(t => {
-              const m1 = hedgeM[`${t.id}_1`];
-              const m2 = hedgeM[`${t.id}_2`];
-              return (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid #F3F4F6' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>{t.label}</div>
-                    <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
-                      <span style={{ fontSize: 11, color: '#9CA3AF' }}>{t.price1} kr/m · {t.price2} kr/m</span>
-                      {t.note && <span style={{ fontSize: 11, fontWeight: 700, color: '#EF4444' }}>{t.note}</span>}
-                    </div>
-                  </div>
-                  {/* 1 side input */}
-                  <div style={{ width: 80, display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '7px 8px', gap: 3, border: m1 ? '1.5px solid #2563EB' : '1.5px solid transparent' }}>
-                    <input
-                      type="number" inputMode="decimal" placeholder="0"
-                      value={m1}
-                      onChange={e => setHedgeM(prev => ({ ...prev, [`${t.id}_1`]: e.target.value }))}
-                      style={{ flex: 1, fontSize: 15, fontWeight: 700, background: 'transparent', textAlign: 'right', width: 0 }}
-                    />
-                    <span style={{ fontSize: 10, color: '#9CA3AF' }}>m</span>
-                  </div>
-                  {/* 2 sider input */}
-                  <div style={{ width: 80, display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '7px 8px', gap: 3, border: m2 ? '1.5px solid #2563EB' : '1.5px solid transparent' }}>
-                    <input
-                      type="number" inputMode="decimal" placeholder="0"
-                      value={m2}
-                      onChange={e => setHedgeM(prev => ({ ...prev, [`${t.id}_2`]: e.target.value }))}
-                      style={{ flex: 1, fontSize: 15, fontWeight: 700, background: 'transparent', textAlign: 'right', width: 0 }}
-                    />
-                    <span style={{ fontSize: 10, color: '#9CA3AF' }}>m</span>
-                  </div>
-                </div>
-              );
-            })}
-            {/* >261 cm */}
-            <div style={{ background: '#FEF3C7', borderRadius: 10, padding: '10px 12px', marginTop: 8 }}>
-              <span style={{ fontSize: 13, color: '#D97706', fontWeight: 600 }}>Over 261 cm — kontakt for tilbud</span>
+          {/* Sub-type vælger */}
+          <div style={{ padding: '12px 16px 0' }}>
+            <div style={{ display: 'flex', background: '#F3F4F6', borderRadius: 12, padding: 4, gap: 3 }}>
+              {[
+                { id: 'klip',      label: '✂️ Hækkeklip' },
+                { id: 'beskæring', label: '🌿 Beskæring'  },
+              ].map(t => (
+                <button key={t.id} onClick={() => setHSubType(t.id)} style={{
+                  flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 13, fontWeight: 700,
+                  background: hSubType === t.id ? '#fff' : 'transparent',
+                  color: hSubType === t.id ? '#2563EB' : '#6B7280',
+                  boxShadow: hSubType === t.id ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
+                  transition: 'all 0.15s',
+                }}>
+                  {t.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Valgfrie tillæg */}
-          {klippesum > 0 && (
-            <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-              <SecTitle>Tillæg</SecTitle>
-
-              {/* Torne-/stikhæk */}
-              <div style={{ marginBottom: 10 }}>
-                <button onClick={() => setTorneTillæg(v => !v)} style={{
-                  width: '100%', borderRadius: 10, padding: '11px 14px', marginBottom: torneTillæg ? 8 : 0,
-                  background: torneTillæg ? '#EFF6FF' : '#F9FAFB', border: `2px solid ${torneTillæg ? '#2563EB' : 'transparent'}`,
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                }}>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: torneTillæg ? '#2563EB' : '#374151' }}>{torneTillæg ? '✓ ' : ''}Torne-/stikhæk</div>
-                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>Tjørn, berberis m.fl. · +6 kr/m</div>
-                  </div>
-                  {torneTillæg && torneM && <span style={{ fontSize: 14, fontWeight: 700, color: '#2563EB' }}>+{fmt((parseFloat(torneM)||0)*6)} kr</span>}
-                </button>
-                {torneTillæg && (
-                  <div style={{ display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '8px 12px', gap: 6 }}>
-                    <input type="number" inputMode="decimal" placeholder="0" value={torneM} onChange={e => setTorneM(e.target.value)}
-                      style={{ flex: 1, fontSize: 16, fontWeight: 700, background: 'transparent' }} />
-                    <span style={{ fontSize: 12, color: '#9CA3AF' }}>meter</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Forvokset */}
-              <div style={{ marginBottom: 10 }}>
-                <button onClick={() => setForvokset(v => !v)} style={{
-                  width: '100%', borderRadius: 10, padding: '11px 14px',
-                  background: forvokset ? '#EFF6FF' : '#F9FAFB', border: `2px solid ${forvokset ? '#2563EB' : 'transparent'}`,
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                }}>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: forvokset ? '#2563EB' : '#374151' }}>{forvokset ? '✓ ' : ''}Forvokset hæk</div>
-                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>Ikke klippet 12–24 mdr · +10% på klippesum</div>
-                  </div>
-                  {forvokset && <span style={{ fontSize: 14, fontWeight: 700, color: '#2563EB' }}>+{fmt(forvoksetFee)} kr</span>}
-                </button>
-              </div>
-
-              {/* Ekstra bred */}
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 6, fontWeight: 600 }}>Ekstra bred hæk</div>
-                <div style={{ display: 'flex', gap: 6, marginBottom: bredTillæg !== 'none' ? 8 : 0 }}>
-                  {[
-                    { val: 'none',   label: 'Ingen',        sub: '' },
-                    { val: 'medium', label: '1,0–1,5 m',    sub: '+6 kr/m' },
-                    { val: 'wide',   label: '> 1,5 m',      sub: '+12 kr/m' },
-                  ].map(o => (
-                    <button key={o.val} onClick={() => setBredTillæg(o.val)} style={{
-                      flex: 1, borderRadius: 10, padding: '9px 6px', fontSize: 12, fontWeight: 700,
-                      background: bredTillæg === o.val ? '#EFF6FF' : '#F9FAFB',
-                      border: `2px solid ${bredTillæg === o.val ? '#2563EB' : 'transparent'}`,
-                      color: bredTillæg === o.val ? '#2563EB' : '#374151',
-                    }}>
-                      {o.label}
-                      {o.sub && <div style={{ fontSize: 10, fontWeight: 500, color: bredTillæg === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 1 }}>{o.sub}</div>}
-                    </button>
-                  ))}
-                </div>
-                {bredTillæg !== 'none' && (
-                  <div style={{ display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '8px 12px', gap: 6 }}>
-                    <input type="number" inputMode="decimal" placeholder="0" value={bredM} onChange={e => setBredM(e.target.value)}
-                      style={{ flex: 1, fontSize: 16, fontWeight: 700, background: 'transparent' }} />
-                    <span style={{ fontSize: 12, color: '#9CA3AF' }}>meter</span>
-                    {bredM && <span style={{ fontSize: 13, fontWeight: 700, color: '#2563EB' }}>+{fmt(bredFee)} kr</span>}
-                  </div>
-                )}
-              </div>
-
-              {/* Skråning */}
-              <div>
-                <button onClick={() => setSkraaningTillæg(v => !v)} style={{
-                  width: '100%', borderRadius: 10, padding: '11px 14px', marginBottom: skraaningTillæg ? 8 : 0,
-                  background: skraaningTillæg ? '#EFF6FF' : '#F9FAFB', border: `2px solid ${skraaningTillæg ? '#2563EB' : 'transparent'}`,
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                }}>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: skraaningTillæg ? '#2563EB' : '#374151' }}>{skraaningTillæg ? '✓ ' : ''}Skråning / svært tilgængeligt</div>
-                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>+15–30 kr/m</div>
-                  </div>
-                  {skraaningTillæg && skraaningM && <span style={{ fontSize: 14, fontWeight: 700, color: '#2563EB' }}>+{fmt(skraaningFee)} kr</span>}
-                </button>
-                {skraaningTillæg && (
-                  <>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                      {[15, 20, 25, 30].map(r => (
-                        <button key={r} onClick={() => setSkraaningRate(r)} style={{
-                          flex: 1, borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700,
-                          background: skraaningRate === r ? '#2563EB' : '#F3F4F6',
-                          color: skraaningRate === r ? '#fff' : '#374151',
-                        }}>{r} kr/m</button>
-                      ))}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '8px 12px', gap: 6 }}>
-                      <input type="number" inputMode="decimal" placeholder="0" value={skraaningM} onChange={e => setSkraaningM(e.target.value)}
-                        style={{ flex: 1, fontSize: 16, fontWeight: 700, background: 'transparent' }} />
-                      <span style={{ fontSize: 12, color: '#9CA3AF' }}>meter</span>
-                    </div>
-                  </>
-                )}
-              </div>
+          {/* Antal meter */}
+          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+            <SecTitle>Antal meter hæk</SecTitle>
+            <div style={{ display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 10, padding: '10px 14px', gap: 6 }}>
+              <input style={{ flex: 1, fontSize: 26, fontWeight: 800, color: '#111827', background: 'transparent', width: 0 }}
+                type="number" inputMode="decimal" value={hMeters}
+                onChange={e => setHMeters(e.target.value)} placeholder="0" />
+              <span style={{ fontSize: 17, fontWeight: 700, color: '#6B7280' }}>m</span>
             </div>
-          )}
+          </div>
+
+          {/* Klipning */}
+          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+            <SecTitle>Klipning</SecTitle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                { val: 'standard', label: 'Top ELLER 1 side',  sub: '70 kr/m'  },
+                { val: 'side_top', label: '1 side + top',      sub: '90 kr/m'  },
+                { val: 'both',     label: 'Begge sider + top', sub: '120 kr/m' },
+              ].map(o => (
+                <button key={o.val} onClick={() => setHService(o.val)} style={{
+                  borderRadius: 10, padding: '12px 14px', textAlign: 'left',
+                  background: hService === o.val ? '#EFF6FF' : '#F9FAFB',
+                  border: `2px solid ${hService === o.val ? '#2563EB' : 'transparent'}`,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: hService === o.val ? '#2563EB' : '#374151' }}>{o.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: hService === o.val ? '#2563EB' : '#9CA3AF' }}>{o.sub}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Hækhøjde */}
+          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+            <SecTitle>Hækhøjde</SecTitle>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[
+                { val: '0-200',   label: '0–200',   sub: 'inkl.'     },
+                { val: '201-250', label: '201–250', sub: '+10 kr/m'  },
+                { val: '251-300', label: '251–300', sub: '+25 kr/m'  },
+                { val: '301-350', label: '301–350', sub: '+35 kr/m'  },
+              ].map(o => (
+                <button key={o.val} onClick={() => setHHeight(o.val)} style={{
+                  flex: 1, borderRadius: 10, padding: '9px 4px', fontSize: 11, fontWeight: 700,
+                  background: hHeight === o.val ? '#EFF6FF' : '#F9FAFB',
+                  border: `2px solid ${hHeight === o.val ? '#2563EB' : 'transparent'}`,
+                  color: hHeight === o.val ? '#2563EB' : '#374151',
+                }}>
+                  {o.label} cm
+                  <div style={{ fontSize: 10, fontWeight: 500, color: hHeight === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 2 }}>{o.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Hækbredde */}
+          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+            <SecTitle>Hækbredde</SecTitle>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[
+                { val: '0-50',    label: '0–50',    sub: 'inkl.'    },
+                { val: '51-100',  label: '51–100',  sub: '+10 kr/m' },
+                { val: '101-150', label: '101–150', sub: '+20 kr/m' },
+                { val: '151-200', label: '151–200', sub: '+30 kr/m' },
+              ].map(o => (
+                <button key={o.val} onClick={() => setHWidth(o.val)} style={{
+                  flex: 1, borderRadius: 10, padding: '9px 4px', fontSize: 11, fontWeight: 700,
+                  background: hWidth === o.val ? '#EFF6FF' : '#F9FAFB',
+                  border: `2px solid ${hWidth === o.val ? '#2563EB' : 'transparent'}`,
+                  color: hWidth === o.val ? '#2563EB' : '#374151',
+                }}>
+                  {o.label} cm
+                  <div style={{ fontSize: 10, fontWeight: 500, color: hWidth === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 2 }}>{o.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Topklip-bredde */}
+          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+            <SecTitle>Topklip-bredde</SecTitle>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[
+                { val: '0-50',    label: '0–50',    sub: 'inkl.'    },
+                { val: '51-100',  label: '51–100',  sub: '+20 kr/m' },
+                { val: '101-150', label: '101–150', sub: '+25 kr/m' },
+                { val: '151-200', label: '151–200', sub: '+30 kr/m' },
+              ].map(o => (
+                <button key={o.val} onClick={() => setHTopCut(o.val)} style={{
+                  flex: 1, borderRadius: 10, padding: '9px 4px', fontSize: 11, fontWeight: 700,
+                  background: hTopCut === o.val ? '#EFF6FF' : '#F9FAFB',
+                  border: `2px solid ${hTopCut === o.val ? '#2563EB' : 'transparent'}`,
+                  color: hTopCut === o.val ? '#2563EB' : '#374151',
+                }}>
+                  {o.label} cm
+                  <div style={{ fontSize: 10, fontWeight: 500, color: hTopCut === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 2 }}>{o.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sideklip-bredde */}
+          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+            <SecTitle>Sideklip-bredde (enkelt side)</SecTitle>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {[
+                { val: '0-25',    label: '0–25',    sub: 'inkl.'    },
+                { val: '26-50',   label: '26–50',   sub: '+20 kr/m' },
+                { val: '51-75',   label: '51–75',   sub: '+40 kr/m' },
+                { val: '76-100',  label: '76–100',  sub: '+60 kr/m' },
+                { val: '101-125', label: '101–125', sub: '+80 kr/m' },
+              ].map(o => (
+                <button key={o.val} onClick={() => setHSideCut(o.val)} style={{
+                  flex: '1 1 calc(33% - 4px)', borderRadius: 10, padding: '9px 4px', fontSize: 11, fontWeight: 700,
+                  background: hSideCut === o.val ? '#EFF6FF' : '#F9FAFB',
+                  border: `2px solid ${hSideCut === o.val ? '#2563EB' : 'transparent'}`,
+                  color: hSideCut === o.val ? '#2563EB' : '#374151',
+                }}>
+                  {o.label} cm
+                  <div style={{ fontSize: 10, fontWeight: 500, color: hSideCut === o.val ? '#60A5FA' : '#9CA3AF', marginTop: 2 }}>{o.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Svær adgang */}
+          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+            <SecTitle>Svær adgang</SecTitle>
+            <button onClick={() => setHDifficult(v => !v)} style={{
+              width: '100%', borderRadius: 10, padding: '12px 14px',
+              background: hDifficult ? '#EFF6FF' : '#F9FAFB',
+              border: `2px solid ${hDifficult ? '#2563EB' : 'transparent'}`,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: hDifficult ? '#2563EB' : '#374151' }}>{hDifficult ? '✓ ' : ''}Svær adgang</div>
+                <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>+50 kr/m</div>
+              </div>
+            </button>
+            {hDifficult && (
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 8, padding: '8px 12px', gap: 6 }}>
+                <input type="number" inputMode="decimal" placeholder="0" value={hDiffM} onChange={e => setHDiffM(e.target.value)}
+                  style={{ flex: 1, fontSize: 16, fontWeight: 700, background: 'transparent' }} />
+                <span style={{ fontSize: 12, color: '#9CA3AF' }}>meter</span>
+              </div>
+            )}
+          </div>
+
+          {/* Affaldsafhentning */}
+          <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+            <SecTitle>Affaldsafhentning</SecTitle>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setHDebris('yes')} style={{
+                flex: 1, borderRadius: 10, padding: '12px 0', fontSize: 14, fontWeight: 700,
+                background: hDebris === 'yes' ? '#EFF6FF' : '#F9FAFB',
+                border: `2px solid ${hDebris === 'yes' ? '#2563EB' : 'transparent'}`,
+                color: hDebris === 'yes' ? '#2563EB' : '#374151',
+              }}>
+                ✓ Ja
+                <div style={{ fontSize: 11, fontWeight: 500, marginTop: 2, color: hDebris === 'yes' ? '#60A5FA' : '#9CA3AF' }}>Normal pris</div>
+              </button>
+              <button onClick={() => setHDebris('no')} style={{
+                flex: 1, borderRadius: 10, padding: '12px 0', fontSize: 14, fontWeight: 700,
+                background: hDebris === 'no' ? '#EFF6FF' : '#F9FAFB',
+                border: `2px solid ${hDebris === 'no' ? '#2563EB' : 'transparent'}`,
+                color: hDebris === 'no' ? '#2563EB' : '#374151',
+              }}>
+                Nej
+                <div style={{ fontSize: 11, fontWeight: 500, marginTop: 2, color: hDebris === 'no' ? '#60A5FA' : '#9CA3AF' }}>-20% rabat</div>
+              </button>
+            </div>
+          </div>
 
           {/* Beregning + totalpris */}
           {hedgeTotal > 0 && (
             <>
               <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
                 <SecTitle>Beregning</SecTitle>
-                {hedgeLines.map(l => (
-                  <Row key={l.key} label={l.label} value={`${fmt(l.total)} kr`} sub={`${fmt(l.meters, 1)} m × ${l.pricePerM} kr/m`} />
-                ))}
-                {skammelFee > 0 && <Row label="Skammel (181–210 cm)" value={`+${fmt(skammelFee)} kr`} accent />}
-                {stigeFee   > 0 && <Row label="Stige (211–260 cm)"   value={`+${fmt(stigeFee)} kr`} accent />}
-                {kørselFee  > 0 && <Row label="Kørsel & opstart"     value={`+${fmt(kørselFee)} kr`} sub={`Klippesum ${fmt(klippesum)} kr`} />}
-                {torneFee   > 0 && <Row label={`Torne-/stikhæk (${fmt(parseFloat(torneM)||0,1)} m)`} value={`+${fmt(torneFee)} kr`} />}
-                {forvoksetFee>0 && <Row label="Forvokset (+10%)"      value={`+${fmt(forvoksetFee)} kr`} />}
-                {bredFee    > 0 && <Row label={`Ekstra bred (${bredTillæg==='medium'?'1,0–1,5 m':'>1,5 m'})`} value={`+${fmt(bredFee)} kr`} />}
-                {skraaningFee>0 && <Row label={`Skråning (${skraaningRate} kr/m)`} value={`+${fmt(skraaningFee)} kr`} />}
-                {hedgeTotal === 1499 && klippesum + skammelFee + stigeFee + kørselFee + torneFee + forvoksetFee + bredFee + skraaningFee < 1499 && (
-                  <Row label="Minimumspris" value="1.499 kr" sub="Gælder pr. opgave" accent />
-                )}
+                <Row label="Basis" value={`${hBase} kr/m`} sub={hService === 'standard' ? 'Top el. 1 side' : hService === 'side_top' ? '1 side + top' : 'Begge sider + top'} />
+                {hHeightAdd > 0 && <Row label="Højdetillæg" value={`+${hHeightAdd} kr/m`} sub={`${hHeight} cm`} accent />}
+                {hWidthAdd  > 0 && <Row label="Breddetillæg" value={`+${hWidthAdd} kr/m`} sub={`${hWidth} cm`} accent />}
+                {hTopAdd    > 0 && <Row label="Topklip-tillæg" value={`+${hTopAdd} kr/m`} sub={`${hTopCut} cm`} accent />}
+                {hSideAdd   > 0 && <Row label="Sideklip-tillæg" value={`+${hSideAdd} kr/m`} sub={`${hSideCut} cm`} accent />}
+                <Row label="Pris pr. meter" value={`${hPricePerM} kr/m`} bold />
+                <Row label={`${fmt(hM, 1)} m × ${hPricePerM} kr/m`} value={`${fmt(hM * hPricePerM)} kr`} />
+                {hDiffFee > 0 && <Row label={`Svær adgang (${parseFloat(hDiffM)||0} m)`} value={`+${fmt(hDiffFee)} kr`} accent />}
+                {hDebris === 'no' && <Row label="Ingen afhentning" value="-20%" sub="Rabat" accent />}
                 <Row label="Total inkl. moms" value={`${fmt(hedgeTotal)} kr`} bold />
               </div>
-
               <div style={{ margin: '12px 16px 0', background: '#2563EB', borderRadius: 14, padding: 20, boxShadow: '0 4px 16px rgba(37,99,235,0.4)' }}>
                 <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
-                  Samlet tilbudspris inkl. moms
+                  {hSubType === 'beskæring' ? 'Beskæring' : 'Hækkeklip'} — samlet tilbudspris
                 </div>
                 <div style={{ color: '#fff', fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
                   {hedgeTotal.toLocaleString('da-DK', { style: 'currency', currency: 'DKK', maximumFractionDigits: 0 })}
                 </div>
                 <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 8 }}>
-                  {hedgeLines.length} {hedgeLines.length === 1 ? 'linje' : 'linjer'} · {hedgeLines.reduce((s, l) => s + l.meters, 0).toFixed(0)} m i alt
+                  {fmt(hM, 1)} m · {hPricePerM} kr/m{hDiffFee > 0 ? ' + svær adgang' : ''}{hDebris === 'no' ? ' · -20%' : ''}
                 </div>
               </div>
             </>
@@ -751,7 +792,8 @@ export default function Tilbud() {
           ) : quotes.map(q => {
             const cust     = customers.find(c => c.id === q.customerId);
             const typeIcon  = q.type === 'grass' ? '🌿' : q.type === 'window' ? '🪟' : '✂️';
-            const typeLabel = q.type === 'grass' ? 'Græsslåning' : q.type === 'window' ? 'Vinduespudsning' : 'Hækkeklip';
+            const hedgeTypeLabel = q.params?.subType === 'beskæring' ? 'Beskæring' : 'Hækkeklip';
+            const typeLabel = q.type === 'grass' ? 'Græsslåning' : q.type === 'window' ? 'Vinduespudsning' : hedgeTypeLabel;
             const isOpen    = quoteApptOpen === q.id;
             return (
               <div key={q.id} style={{ background: '#fff', borderRadius: 14, padding: 16, marginBottom: 10, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
