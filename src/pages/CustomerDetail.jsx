@@ -1,42 +1,95 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getCustomers, getAppointments, formatDuration, formatRecurrence, nextOccurrence, getApptColor } from '../storage.js';
+import { getCustomers, getAppointments, formatDuration, formatRecurrence, occursOnDate, getApptColor } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 
-function formatDate(iso) {
-  return new Date(iso).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+function formatDate(d) {
+  return d.toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function gapLabel(days) {
+  if (days === 0) return null;
+  if (days === 7)  return '1 uge';
+  if (days === 14) return '2 uger';
+  if (days % 7 === 0) return `${days / 7} uger`;
+  if (days === 1)  return '1 dag';
+  return `${days} dage`;
 }
 
 const S = {
   section: { background: '#fff', margin: '14px 16px 0', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' },
   sectionTitle: { fontSize: 13, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
   row: { display: 'flex', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #F3F4F6', gap: 12 },
-  apptCard: { display: 'flex', alignItems: 'flex-start', background: '#EFF6FF', borderRadius: 10, padding: 12, marginBottom: 8, gap: 10 },
-  apptPast: { background: '#F0FDF4' },
 };
+
+function ApptCard({ a, dateLabel, color, icon, bg }) {
+  const navigate = useNavigate();
+  return (
+    <div onClick={() => navigate(`/aftaler/${a.id}/rediger`)}
+      style={{ background: bg || '#EFF6FF', borderRadius: 10, padding: 12, marginBottom: 6, borderLeft: `3px solid ${color}`, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>{a.title}</div>
+        <span style={{ fontSize: 18, flexShrink: 0, marginLeft: 6 }}>{icon}</span>
+      </div>
+      <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{dateLabel}</div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+        {a.duration > 0 && <span style={{ background: '#D1FAE5', color: '#059669', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px' }}>⏱ {formatDuration(a.duration)}</span>}
+        {formatRecurrence(a) && <span style={{ background: '#FEF3C7', color: '#D97706', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px' }}>🔁 {formatRecurrence(a)}</span>}
+        {a.price > 0 && <span style={{ background: '#F0FDF4', color: '#16A34A', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px' }}>💰 {a.price.toLocaleString('da-DK')} kr</span>}
+      </div>
+    </div>
+  );
+}
 
 export default function CustomerDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [customer, setCustomer] = useState(null);
-  const [appointments, setAppointments] = useState([]);
+  const [upcoming, setUpcoming] = useState([]);
+  const [past, setPast]         = useState([]);
+  const [showAllPast, setShowAllPast] = useState(false);
 
   useEffect(() => {
     const c = getCustomers().find(x => x.id === id);
     setCustomer(c);
-    const now = new Date();
-    const appts = getAppointments().filter(a => a.customerId === id).sort((a, b) => nextOccurrence(a) - nextOccurrence(b));
-    setAppointments(appts);
+    const appts = getAppointments().filter(a => a.customerId === id);
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+
+    // Kommende forekomster: næste 3 måneder
+    const horizon = new Date(today); horizon.setMonth(horizon.getMonth() + 3);
+    const upArr = [];
+    appts.forEach(a => {
+      const d = new Date(today);
+      while (d <= horizon) {
+        if (occursOnDate(a, d)) upArr.push({ ...a, _date: new Date(d) });
+        d.setDate(d.getDate() + 1);
+      }
+    });
+    upArr.sort((a, b) => a._date - b._date);
+    setUpcoming(upArr);
+
+    // Afsluttede forekomster: de seneste 3 måneder
+    const pastStart = new Date(today); pastStart.setMonth(pastStart.getMonth() - 3);
+    const pastArr = [];
+    appts.forEach(a => {
+      const startFrom = new Date(Math.max(pastStart.getTime(), new Date(a.date).setHours(0,0,0,0)));
+      const d = new Date(startFrom);
+      while (d < today) {
+        if (occursOnDate(a, d)) pastArr.push({ ...a, _date: new Date(d) });
+        d.setDate(d.getDate() + 1);
+      }
+    });
+    pastArr.sort((a, b) => b._date - a._date);
+    setPast(pastArr);
   }, [id]);
 
   if (!customer) return <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF' }}>Kunde ikke fundet</div>;
 
-  const today = new Date(); today.setHours(0,0,0,0);
-  const upcoming = appointments.filter(a => nextOccurrence(a) >= today);
-  const past = appointments.filter(a => nextOccurrence(a) < today && (!a.recurrence || a.recurrence === 'none'));
+  const visiblePast = showAllPast ? past : past.slice(0, 5);
 
   return (
-    <div style={{ paddingBottom: 32 }}>
+    <div style={{ paddingBottom: 40 }}>
       <TopBar title={customer.name} backTo="/kunder" action={
         <button onClick={() => navigate(`/kunder/${id}/rediger`)} style={{ color: '#fff', fontSize: 14, fontWeight: 600, background: 'rgba(255,255,255,0.2)', borderRadius: 20, padding: '6px 14px' }}>Rediger</button>
       } />
@@ -92,38 +145,54 @@ export default function CustomerDetail() {
           <button onClick={() => navigate(`/kunder/${id}/ny-aftale`)} style={{ color: '#2563EB', fontSize: 13, fontWeight: 600 }}>+ Ny aftale</button>
         </div>
         {upcoming.length === 0 ? (
-          <div style={{ color: '#9CA3AF', fontSize: 14, fontStyle: 'italic' }}>Ingen kommende aftaler</div>
-        ) : upcoming.map(a => (
-          <div key={a.id} style={{ ...S.apptCard, borderLeft: `3px solid ${getApptColor(a)}` }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>🕐</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>{a.title}</div>
-              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{formatDate(nextOccurrence(a).toISOString())}</div>
-              <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                {a.duration > 0 && <span style={{ background: '#D1FAE5', color: '#059669', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px' }}>⏱ {formatDuration(a.duration)}</span>}
-                {formatRecurrence(a) && <span style={{ background: '#FEF3C7', color: '#D97706', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px' }}>🔁 {formatRecurrence(a)}</span>}
-              </div>
-              {a.notes && <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>{a.notes}</div>}
-            </div>
-          </div>
-        ))}
+          <div style={{ color: '#9CA3AF', fontSize: 14, fontStyle: 'italic' }}>Ingen kommende aftaler de næste 3 måneder</div>
+        ) : upcoming.map((a, i) => {
+          const prev = i > 0 ? upcoming[i - 1] : null;
+          const gapDays = prev ? Math.round((a._date - prev._date) / 86400000) : null;
+          const label = gapLabel(gapDays);
+          return (
+            <React.Fragment key={`${a.id}_${a._date.toISOString()}`}>
+              {label && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
+                  <div style={{ flex: 1, height: 1, background: '#E5E7EB' }} />
+                  <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600 }}>{label}</span>
+                  <div style={{ flex: 1, height: 1, background: '#E5E7EB' }} />
+                </div>
+              )}
+              <ApptCard
+                a={a}
+                dateLabel={formatDate(a._date)}
+                color={getApptColor(a)}
+                icon="🕐"
+                bg="#EFF6FF"
+              />
+            </React.Fragment>
+          );
+        })}
       </div>
 
       {/* Past appointments */}
       {past.length > 0 && (
         <div style={S.section}>
-          <div style={S.sectionTitle}>Tidligere aftaler</div>
-          {past.map(a => (
-            <div key={a.id} style={{ ...S.apptCard, ...S.apptPast }}>
-              <span style={{ fontSize: 18, flexShrink: 0 }}>✅</span>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{a.title}</div>
-                <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{formatDate(a.date)}</div>
-                {a.duration > 0 && <span style={{ fontSize: 11, color: '#6B7280' }}>⏱ {formatDuration(a.duration)}</span>}
-                {a.notes && <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>{a.notes}</div>}
-              </div>
-            </div>
+          <div style={S.sectionTitle}>Afsluttede aftaler</div>
+          {visiblePast.map(a => (
+            <ApptCard
+              key={`${a.id}_${a._date.toISOString()}`}
+              a={a}
+              dateLabel={formatDate(a._date)}
+              color={getApptColor(a)}
+              icon="✅"
+              bg="#F0FDF4"
+            />
           ))}
+          {past.length > 5 && (
+            <button
+              onClick={() => setShowAllPast(v => !v)}
+              style={{ width: '100%', marginTop: 6, color: '#6B7280', fontSize: 13, fontWeight: 600, background: '#F3F4F6', borderRadius: 10, padding: '9px 0' }}
+            >
+              {showAllPast ? 'Vis færre' : `Vis alle ${past.length} afsluttede`}
+            </button>
+          )}
         </div>
       )}
     </div>

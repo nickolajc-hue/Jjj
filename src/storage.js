@@ -123,6 +123,10 @@ export function occursOnDate(appt, targetDate) {
 
   if (t < s) return false;
 
+  // Respekter enkeltdags-undtagelser (brugt ved flytning af dag)
+  const tStr = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+  if (appt.exceptions && appt.exceptions.includes(tStr)) return false;
+
   // Respekter slutdato
   if (appt.recurrenceEndDate) {
     const e = new Date(appt.recurrenceEndDate); e.setHours(0, 0, 0, 0);

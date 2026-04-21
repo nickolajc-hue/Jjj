@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
-  getAppointments, getCustomers, occursOnDate,
+  getAppointments, saveAppointments, newId, getCustomers, occursOnDate,
   getApptColor, formatDuration,
   getOffDays, saveOffDays,
   getWorkHours, saveWorkHours,
   getTravelTime, saveTravelTime,
   toDateStr,
 } from '../storage.js';
+import CalendarPicker from '../components/CalendarPicker.jsx';
 
 const MÅNEDER = ['Januar','Februar','Marts','April','Maj','Juni','Juli','August','September','Oktober','November','December'];
 const UGEDAGE = ['Ma','Ti','On','To','Fr','Lø','Sø'];
@@ -51,6 +52,9 @@ export default function Kalender() {
   const [whInput,   setWhInput]   = useState('');
   const [editTT,    setEditTT]    = useState(false);
   const [ttInput,   setTtInput]   = useState('');
+  const [showMove,  setShowMove]  = useState(false);
+  const [moveTarget, setMoveTarget] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const allAppts = getAppointments();
@@ -65,7 +69,7 @@ export default function Kalender() {
       d.setDate(d.getDate() + 1);
     }
     setApptsByDay(map);
-  }, [viewYear, viewMonth]);
+  }, [viewYear, viewMonth, refreshKey]);
 
   const prevMonth = () => {
     if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
@@ -101,6 +105,30 @@ export default function Kalender() {
   const saveCustomTT = () => {
     const m = parseInt(ttInput);
     if (!isNaN(m) && m >= 0) saveTT(m);
+  };
+
+  const executeMove = () => {
+    if (!moveTarget || !selectedDay) return;
+    const srcStr = toDateStr(selectedDay);
+    const tgtStr = toDateStr(moveTarget);
+    if (srcStr === tgtStr) { setShowMove(false); return; }
+    const selIds = new Set(selAppts.map(a => a.id));
+    const result = [];
+    getAppointments().forEach(a => {
+      if (!selIds.has(a.id)) { result.push(a); return; }
+      if (!a.recurrence || a.recurrence === 'none') {
+        result.push({ ...a, date: tgtStr });
+      } else {
+        result.push({ ...a, exceptions: [...(a.exceptions || []), srcStr] });
+        const { recurrence: _r, recurrenceInterval: _ri, recurrenceEndDate: _re, exceptions: _ex, ...rest } = a;
+        result.push({ ...rest, id: newId(), date: tgtStr });
+      }
+    });
+    saveAppointments(result);
+    setShowMove(false);
+    setMoveTarget(null);
+    setSelectedDay(null);
+    setRefreshKey(k => k + 1);
   };
 
   const firstDow  = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
@@ -345,30 +373,62 @@ export default function Kalender() {
       {/* Dag-bottomsheet */}
       {selectedDay && createPortal(
         <div
-          onClick={e => { if (e.target === e.currentTarget) setSelectedDay(null); }}
+          onClick={e => { if (e.target === e.currentTarget) { setSelectedDay(null); setShowMove(false); setMoveTarget(null); } }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'flex-end' }}
         >
-          <div style={{ background: '#F9FAFB', borderRadius: '20px 20px 0 0', width: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ background: '#F9FAFB', borderRadius: '20px 20px 0 0', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
             {/* Sheet-header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: '#fff', borderBottom: '1px solid #F3F4F6', flexShrink: 0 }}>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 17, textTransform: 'capitalize' }}>
-                  {selectedDay.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' })}
-                  {selIsToday && <span style={{ marginLeft: 8, fontSize: 12, background: '#2563EB', color: '#fff', borderRadius: 8, padding: '2px 8px', fontWeight: 700 }}>I dag</span>}
-                </div>
-                <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>
-                  {selAppts.length > 0 ? `${selAppts.length} opgave${selAppts.length !== 1 ? 'r' : ''}` : 'Ingen opgaver'}
-                  {selIsOff ? ' · Fri dag' : ''}
-                </div>
-              </div>
-              <button onClick={() => setSelectedDay(null)} style={{ fontSize: 28, color: '#9CA3AF', lineHeight: 1, padding: '0 4px' }}>×</button>
+              {showMove ? (
+                <>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 17 }}>Flyt alle opgaver til...</div>
+                    <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>{selAppts.length} opgave{selAppts.length !== 1 ? 'r' : ''} flyttes</div>
+                  </div>
+                  <button onClick={() => { setShowMove(false); setMoveTarget(null); }} style={{ fontSize: 14, color: '#6B7280', fontWeight: 600, background: '#F3F4F6', borderRadius: 20, padding: '6px 14px' }}>Annuller</button>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 17, textTransform: 'capitalize' }}>
+                      {selectedDay.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' })}
+                      {selIsToday && <span style={{ marginLeft: 8, fontSize: 12, background: '#2563EB', color: '#fff', borderRadius: 8, padding: '2px 8px', fontWeight: 700 }}>I dag</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>
+                      {selAppts.length > 0 ? `${selAppts.length} opgave${selAppts.length !== 1 ? 'r' : ''}` : 'Ingen opgaver'}
+                      {selIsOff ? ' · Fri dag' : ''}
+                    </div>
+                  </div>
+                  <button onClick={() => { setSelectedDay(null); setShowMove(false); }} style={{ fontSize: 28, color: '#9CA3AF', lineHeight: 1, padding: '0 4px' }}>×</button>
+                </>
+              )}
             </div>
 
             <div style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '14px 16px 32px' }}>
 
+              {/* Flyt-dag-indhold */}
+              {showMove && (
+                <>
+                  <CalendarPicker
+                    value={moveTarget}
+                    onChange={setMoveTarget}
+                    offDays={offDays}
+                  />
+                  {moveTarget && (
+                    <button onClick={executeMove} style={{
+                      width: '100%', background: '#2563EB', color: '#fff', borderRadius: 14,
+                      padding: '14px 0', fontSize: 16, fontWeight: 700, marginTop: 4,
+                      boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
+                    }}>
+                      Flyt {selAppts.length} opgave{selAppts.length !== 1 ? 'r' : ''} til {moveTarget.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' })}
+                    </button>
+                  )}
+                </>
+              )}
+
               {/* Kapacitetsindikator */}
-              {workHours > 0 && !selIsOff && (
+              {!showMove && workHours > 0 && !selIsOff && (
                 <div style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>⏱ Kapacitet</span>
@@ -392,7 +452,7 @@ export default function Kalender() {
               )}
 
               {/* Fri-dag-toggle */}
-              <button onClick={() => toggleOff(selStr)} style={{
+              {!showMove && <button onClick={() => toggleOff(selStr)} style={{
                 width: '100%', marginBottom: 14, borderRadius: 12, padding: '12px 16px',
                 background: selIsOff ? '#FEE2E2' : '#F9FAFB',
                 border: `2px solid ${selIsOff ? '#EF4444' : '#E5E7EB'}`,
@@ -412,10 +472,10 @@ export default function Kalender() {
                 }}>
                   {selIsOff ? '✓' : '+'}
                 </div>
-              </button>
+              </button>}
 
               {/* Opgave-liste */}
-              {selAppts.length > 0 && (
+              {!showMove && selAppts.length > 0 && (
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
                     Opgaver
@@ -440,20 +500,32 @@ export default function Kalender() {
               )}
 
               {/* Handlingsknapper */}
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  onClick={() => { setSelectedDay(null); navigate('/min-dag', { state: { date: selectedDay.toISOString() } }); }}
-                  style={{ flex: 1, background: '#EFF6FF', color: '#2563EB', borderRadius: 12, padding: '12px 0', fontSize: 14, fontWeight: 700 }}
-                >
-                  📅 Åbn Min dag
-                </button>
-                <button
-                  onClick={() => { setSelectedDay(null); navigate('/aftaler/ny', { state: { date: selectedDay.toISOString() } }); }}
-                  style={{ flex: 1, background: '#2563EB', color: '#fff', borderRadius: 12, padding: '12px 0', fontSize: 14, fontWeight: 700 }}
-                >
-                  + Ny opgave
-                </button>
-              </div>
+              {!showMove && (
+                <>
+                  {selAppts.length > 0 && (
+                    <button
+                      onClick={() => { setShowMove(true); setMoveTarget(null); }}
+                      style={{ width: '100%', marginBottom: 10, background: '#FEF3C7', color: '#D97706', borderRadius: 12, padding: '12px 0', fontSize: 14, fontWeight: 700, border: '1.5px solid #FCD34D' }}
+                    >
+                      📦 Flyt alle opgaver til en anden dag
+                    </button>
+                  )}
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button
+                      onClick={() => { setSelectedDay(null); navigate('/min-dag', { state: { date: selectedDay.toISOString() } }); }}
+                      style={{ flex: 1, background: '#EFF6FF', color: '#2563EB', borderRadius: 12, padding: '12px 0', fontSize: 14, fontWeight: 700 }}
+                    >
+                      📅 Åbn Min dag
+                    </button>
+                    <button
+                      onClick={() => { setSelectedDay(null); navigate('/aftaler/ny', { state: { date: selectedDay.toISOString() } }); }}
+                      style={{ flex: 1, background: '#2563EB', color: '#fff', borderRadius: 12, padding: '12px 0', fontSize: 14, fontWeight: 700 }}
+                    >
+                      + Ny opgave
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>,
