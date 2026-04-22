@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getCustomers, getAppointments, formatDuration, formatRecurrence, occursOnDate, getApptColor } from '../storage.js';
+import { getCustomers, getAppointments, getQuotes, saveQuotes, formatDuration, formatRecurrence, occursOnDate, getApptColor } from '../storage.js';
 import TopBar from '../components/TopBar.jsx';
 
 function formatDate(d) {
@@ -48,6 +48,7 @@ export default function CustomerDetail() {
   const [upcoming, setUpcoming] = useState([]);
   const [past, setPast]         = useState([]);
   const [showAllPast, setShowAllPast] = useState(false);
+  const [quotes, setQuotes]     = useState([]);
 
   useEffect(() => {
     const c = getCustomers().find(x => x.id === id);
@@ -82,6 +83,10 @@ export default function CustomerDetail() {
     });
     pastArr.sort((a, b) => b._date - a._date);
     setPast(pastArr);
+
+    const customerQuotes = getQuotes().filter(q => q.customerId === id);
+    customerQuotes.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    setQuotes(customerQuotes);
   }, [id]);
 
   if (!customer) return <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF' }}>Kunde ikke fundet</div>;
@@ -170,6 +175,58 @@ export default function CustomerDetail() {
           );
         })}
       </div>
+
+      {/* Gemte tilbud */}
+      {quotes.length > 0 && (
+        <div style={S.section}>
+          <div style={S.sectionTitle}>Gemte tilbud</div>
+          {quotes.map(q => {
+            const typeIcon  = q.type === 'grass' ? '🌿' : q.type === 'window' ? '🪟' : '✂️';
+            const p = q.params || {};
+            const hedgeLabel = (p.klipOn && p.beskæringOn) ? 'Hækkeklip + Beskæring'
+                             : p.beskæringOn ? 'Beskæring'
+                             : p.subType === 'beskæring' ? 'Beskæring'
+                             : 'Hækkeklip';
+            const typeLabel = q.type === 'grass' ? 'Græsslåning' : q.type === 'window' ? 'Vinduespudsning' : hedgeLabel;
+            const disc = p.discount || 0;
+            const deleteQuote = () => {
+              if (!confirm('Slet dette tilbud?')) return;
+              saveQuotes(getQuotes().filter(x => x.id !== q.id));
+              setQuotes(prev => prev.filter(x => x.id !== q.id));
+            };
+            return (
+              <div key={q.id} style={{ background: '#F9FAFB', borderRadius: 10, padding: 12, marginBottom: 8, borderLeft: '3px solid #2563EB' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{typeIcon} {typeLabel}</div>
+                    <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+                      {new Date(q.createdAt).toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    {disc > 0 && <div style={{ fontSize: 11, color: '#10B981', fontWeight: 700 }}>-{disc}% rabat</div>}
+                    <div style={{ fontSize: 18, fontWeight: 900, color: '#2563EB' }}>{q.totalPrice.toLocaleString('da-DK')} kr</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button
+                    onClick={() => navigate('/tilbud')}
+                    style={{ flex: 1, background: '#EFF6FF', color: '#2563EB', borderRadius: 8, padding: '8px 0', fontSize: 12, fontWeight: 700 }}
+                  >
+                    Se i tilbud
+                  </button>
+                  <button
+                    onClick={deleteQuote}
+                    style={{ background: '#FEE2E2', color: '#EF4444', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 700 }}
+                  >
+                    Slet
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Past appointments */}
       {past.length > 0 && (
