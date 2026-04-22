@@ -89,7 +89,8 @@ export default function Tilbud() {
   const [hDifficult, setHDifficult] = useState(false);
   const [hDiffM,     setHDiffM]     = useState('');
   const [hDebris,    setHDebris]    = useState('yes');
-  const [hSubType,   setHSubType]   = useState('klip'); // 'klip'|'beskæring'
+  const [hKlipOn,      setHKlipOn]      = useState(true);
+  const [hBeskæringOn, setHBeskæringOn] = useState(false);
 
   // Hækkeklip (klip) — tier-baseret
   const [hedgeM,         setHedgeM]         = useState(EMPTY_HEDGE_M);
@@ -117,6 +118,7 @@ export default function Tilbud() {
   const [newCustPhone,   setNewCustPhone]   = useState('');
   const [newCustAddr,    setNewCustAddr]    = useState('');
   const [editingQuoteId, setEditingQuoteId] = useState(null);
+  const [discount, setDiscount] = useState(0);
 
   const loadQuotes = () => setQuotes([...getQuotes()].reverse());
   useEffect(() => { setCustomers(getCustomers()); loadQuotes(); }, []);
@@ -271,22 +273,26 @@ export default function Tilbud() {
   const klipRaw      = klippesum + skammelFee + stigeFee + kørselFee + torneFee + forvoksetFee + bredFee + skraaningFee;
   const hedgeKlipTotal = klipRaw > 0 ? Math.max(1499, Math.round(klipRaw)) : 0;
 
-  const currentPrice = serviceType === 'grass' ? (m2Val > 0 ? Math.round(grassPrice) : 0)
-                     : serviceType === 'window' ? (windowTier?.price || 0)
-                     : serviceType === 'hedge'  ? (hSubType === 'klip' ? hedgeKlipTotal : beskæringTotal)
-                     : 0;
+  const hedgeRawTotal = (hKlipOn ? hedgeKlipTotal : 0) + (hBeskæringOn ? beskæringTotal : 0);
+  const priceBeforeDiscount = serviceType === 'grass' ? (m2Val > 0 ? Math.round(grassPrice) : 0)
+                            : serviceType === 'window' ? (windowTier?.price || 0)
+                            : serviceType === 'hedge'  ? hedgeRawTotal
+                            : 0;
+  const discountAmt  = discount > 0 && priceBeforeDiscount > 0 ? Math.round(priceBeforeDiscount * discount / 100) : 0;
+  const currentPrice = priceBeforeDiscount - discountAmt;
 
   const saveQuoteAndAppt = () => {
-    const hedgeLabel = hSubType === 'beskæring' ? 'Beskæring' : 'Hækkeklip';
+    const hedgeLabel = (hKlipOn && hBeskæringOn) ? 'Hækkeklip + Beskæring' : hBeskæringOn ? 'Beskæring' : 'Hækkeklip';
     const label = serviceType === 'grass' ? 'Græsslåning' : serviceType === 'window' ? 'Vinduespudsning' : hedgeLabel;
     const cust  = customers.find(c => c.id === saveCustomerId);
-    const params = serviceType === 'hedge' && hSubType === 'klip'
-      ? { subType: 'klip', hedgeM, torneTillæg, torneM, forvokset, bredTillæg, bredM, skraaningTillæg, skraaningRate, skraaningM }
-      : serviceType === 'hedge'
-      ? { subType: hSubType, meters: hMeters, service: hService, height: hHeight, width: hWidth, topCut: hTopCut, sideCut: hSideCut, difficult: hDifficult, diffM: hDiffM, debris: hDebris }
+    const params = serviceType === 'hedge'
+      ? { klipOn: hKlipOn, beskæringOn: hBeskæringOn,
+          hedgeM, torneTillæg, torneM, forvokset, bredTillæg, bredM, skraaningTillæg, skraaningRate, skraaningM,
+          meters: hMeters, service: hService, height: hHeight, width: hWidth, topCut: hTopCut, sideCut: hSideCut, difficult: hDifficult, diffM: hDiffM, debris: hDebris,
+          discount }
       : serviceType === 'grass'
-      ? { m2: manualM2, speed, rate, setupTime, isNewCustomer }
-      : { m2: manualM2 };
+      ? { m2: manualM2, speed, rate, setupTime, isNewCustomer, discount }
+      : { m2: manualM2, discount };
     const existing = editingQuoteId ? getQuotes().find(q => q.id === editingQuoteId) : null;
     saveQuotes([...getQuotes().filter(q => q.id !== (editingQuoteId || '')), {
       id: editingQuoteId || newId(),
@@ -324,7 +330,11 @@ export default function Tilbud() {
 
   const createApptFromQuote = (q) => {
     const cust = customers.find(c => c.id === q.customerId);
-    const hedgeLabel = q.params?.subType === 'beskæring' ? 'Beskæring' : 'Hækkeklip';
+    const p = q.params || {};
+    const hedgeLabel = (p.klipOn && p.beskæringOn) ? 'Hækkeklip + Beskæring'
+                     : p.beskæringOn ? 'Beskæring'
+                     : p.subType === 'beskæring' ? 'Beskæring'
+                     : 'Hækkeklip';
     const label = q.type === 'grass' ? 'Græsslåning' : q.type === 'window' ? 'Vinduespudsning' : hedgeLabel;
     saveAppointments([...getAppointments(), {
       id: newId(),
@@ -360,28 +370,33 @@ export default function Tilbud() {
     setQuoteApptOpen(null);
     if (q.type === 'hedge') {
       const p = q.params || {};
-      setHSubType(p.subType || 'klip');
-      if (p.subType === 'klip' || !p.subType) {
-        setHedgeM(p.hedgeM || EMPTY_HEDGE_M);
-        setTorneTillæg(p.torneTillæg || false);
-        setTorneM(p.torneM || '');
-        setForvokset(p.forvokset || false);
-        setBredTillæg(p.bredTillæg || 'none');
-        setBredM(p.bredM || '');
-        setSkraaningTillæg(p.skraaningTillæg || false);
-        setSkraaningRate(p.skraaningRate || 15);
-        setSkraaningM(p.skraaningM || '');
+      // backward compat: old subType field
+      if ('klipOn' in p) {
+        setHKlipOn(p.klipOn ?? true);
+        setHBeskæringOn(p.beskæringOn ?? false);
       } else {
-        setHMeters(p.meters || '');
-        setHService(p.service || 'standard');
-        setHHeight(p.height || '0-200');
-        setHWidth(p.width || '0-50');
-        setHTopCut(p.topCut || '0-50');
-        setHSideCut(p.sideCut || '0-25');
-        setHDifficult(p.difficult || false);
-        setHDiffM(p.diffM || '');
-        setHDebris(p.debris || 'yes');
+        setHKlipOn(p.subType !== 'beskæring');
+        setHBeskæringOn(p.subType === 'beskæring');
       }
+      setHedgeM(p.hedgeM || EMPTY_HEDGE_M);
+      setTorneTillæg(p.torneTillæg || false);
+      setTorneM(p.torneM || '');
+      setForvokset(p.forvokset || false);
+      setBredTillæg(p.bredTillæg || 'none');
+      setBredM(p.bredM || '');
+      setSkraaningTillæg(p.skraaningTillæg || false);
+      setSkraaningRate(p.skraaningRate || 15);
+      setSkraaningM(p.skraaningM || '');
+      setHMeters(p.meters || '');
+      setHService(p.service || 'standard');
+      setHHeight(p.height || '0-200');
+      setHWidth(p.width || '0-50');
+      setHTopCut(p.topCut || '0-50');
+      setHSideCut(p.sideCut || '0-25');
+      setHDifficult(p.difficult || false);
+      setHDiffM(p.diffM || '');
+      setHDebris(p.debris || 'yes');
+      setDiscount(p.discount || 0);
     } else if (q.type === 'grass') {
       const p = q.params || {};
       setManualM2(p.m2 || '');
@@ -389,8 +404,10 @@ export default function Tilbud() {
       if (p.rate) setRate(p.rate);
       if (p.setupTime) setSetupTime(p.setupTime);
       setIsNewCustomer(p.isNewCustomer ?? true);
+      setDiscount(p.discount || 0);
     } else if (q.type === 'window') {
       setManualM2((q.params?.m2) || '');
+      setDiscount(q.params?.discount || 0);
     }
   };
 
@@ -639,28 +656,26 @@ export default function Tilbud() {
       {/* ══ HÆKKEKLIP / BESKÆRING ═══════════════════════════════════════════ */}
       {serviceType === 'hedge' && (
         <>
-          {/* Sub-type vælger */}
-          <div style={{ padding: '12px 16px 0' }}>
-            <div style={{ display: 'flex', background: '#F3F4F6', borderRadius: 12, padding: 4, gap: 3 }}>
-              {[
-                { id: 'klip',      label: '✂️ Hækkeklip' },
-                { id: 'beskæring', label: '🌿 Beskæring'  },
-              ].map(t => (
-                <button key={t.id} onClick={() => setHSubType(t.id)} style={{
-                  flex: 1, borderRadius: 9, padding: '10px 0', fontSize: 13, fontWeight: 700,
-                  background: hSubType === t.id ? '#fff' : 'transparent',
-                  color: hSubType === t.id ? '#2563EB' : '#6B7280',
-                  boxShadow: hSubType === t.id ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
-                  transition: 'all 0.15s',
-                }}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
+          {/* Sub-type vælger — multi-select */}
+          <div style={{ padding: '12px 16px 0', display: 'flex', gap: 8 }}>
+            {[
+              { label: '✂️ Hækkeklip', on: hKlipOn,      set: setHKlipOn      },
+              { label: '🌿 Beskæring',  on: hBeskæringOn, set: setHBeskæringOn },
+            ].map(t => (
+              <button key={t.label} onClick={() => t.set(v => !v)} style={{
+                flex: 1, borderRadius: 12, padding: '11px 0', fontSize: 13, fontWeight: 700,
+                background: t.on ? '#EFF6FF' : '#F3F4F6',
+                color: t.on ? '#2563EB' : '#6B7280',
+                border: `2px solid ${t.on ? '#2563EB' : 'transparent'}`,
+                transition: 'all 0.15s',
+              }}>
+                {t.on ? '✓ ' : ''}{t.label}
+              </button>
+            ))}
           </div>
 
           {/* ── HÆKKEKLIP (tier-model) ─────────────────────────────────── */}
-          {hSubType === 'klip' && (<>
+          {hKlipOn && (<>
             <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
               <SecTitle>Antal meter pr. højde</SecTitle>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -802,20 +817,22 @@ export default function Tilbud() {
                 {hedgeKlipTotal === 1499 && klipRaw < 1499 && <Row label="Minimumspris" value="1.499 kr" sub="Gælder pr. opgave" accent />}
                 <Row label="Total inkl. moms" value={`${fmt(hedgeKlipTotal)} kr`} bold />
               </div>
-              <div style={{ margin: '12px 16px 0', background: '#2563EB', borderRadius: 14, padding: 20, boxShadow: '0 4px 16px rgba(37,99,235,0.4)' }}>
-                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Hækkeklip — samlet tilbudspris</div>
-                <div style={{ color: '#fff', fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
-                  {hedgeKlipTotal.toLocaleString('da-DK', { style: 'currency', currency: 'DKK', maximumFractionDigits: 0 })}
+              {!hBeskæringOn && (
+                <div style={{ margin: '12px 16px 0', background: '#2563EB', borderRadius: 14, padding: 20, boxShadow: '0 4px 16px rgba(37,99,235,0.4)' }}>
+                  <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Hækkeklip — samlet tilbudspris</div>
+                  <div style={{ color: '#fff', fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
+                    {hedgeKlipTotal.toLocaleString('da-DK', { style: 'currency', currency: 'DKK', maximumFractionDigits: 0 })}
+                  </div>
+                  <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 8 }}>
+                    {hedgeLines.reduce((s,l) => s+l.meters,0).toFixed(0)} m i alt · inkl. kørsel & opstart
+                  </div>
                 </div>
-                <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 8 }}>
-                  {hedgeLines.reduce((s,l) => s+l.meters,0).toFixed(0)} m i alt · inkl. kørsel & opstart
-                </div>
-              </div>
+              )}
             </>)}
           </>)}
 
           {/* ── BESKÆRING (H_SURCHARGE) ────────────────────────────────── */}
-          {hSubType === 'beskæring' && (<>
+          {hBeskæringOn && (<>
             <div style={{ margin: '12px 16px 0', background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
               <SecTitle>Antal meter hæk</SecTitle>
               <div style={{ display: 'flex', alignItems: 'center', background: '#F9FAFB', borderRadius: 10, padding: '10px 14px', gap: 6 }}>
@@ -960,16 +977,37 @@ export default function Tilbud() {
                 {hDebris === 'no' && <Row label="Ingen afhentning" value="-20%" sub="Rabat" accent />}
                 <Row label="Total inkl. moms" value={`${fmt(beskæringTotal)} kr`} bold />
               </div>
-              <div style={{ margin: '12px 16px 0', background: '#2563EB', borderRadius: 14, padding: 20, boxShadow: '0 4px 16px rgba(37,99,235,0.4)' }}>
-                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Beskæring — samlet tilbudspris</div>
-                <div style={{ color: '#fff', fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
-                  {beskæringTotal.toLocaleString('da-DK', { style: 'currency', currency: 'DKK', maximumFractionDigits: 0 })}
+              {!hKlipOn && (
+                <div style={{ margin: '12px 16px 0', background: '#2563EB', borderRadius: 14, padding: 20, boxShadow: '0 4px 16px rgba(37,99,235,0.4)' }}>
+                  <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Beskæring — samlet tilbudspris</div>
+                  <div style={{ color: '#fff', fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
+                    {beskæringTotal.toLocaleString('da-DK', { style: 'currency', currency: 'DKK', maximumFractionDigits: 0 })}
+                  </div>
+                  <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 8 }}>
+                    {fmt(hM, 1)} m · {hPricePerM} kr/m{hDiffFee > 0 ? ' + svær adgang' : ''}{hDebris === 'no' ? ' · -20%' : ''}
+                  </div>
                 </div>
-                <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 8 }}>
-                  {fmt(hM, 1)} m · {hPricePerM} kr/m{hDiffFee > 0 ? ' + svær adgang' : ''}{hDebris === 'no' ? ' · -20%' : ''}
+              )}
+            </>)}
+
+          {/* ── KOMBINERET TOTAL (begge aktive) ───────────────────────── */}
+          {hKlipOn && hBeskæringOn && hedgeKlipTotal > 0 && beskæringTotal > 0 && (
+            <div style={{ margin: '12px 16px 0', background: '#1E40AF', borderRadius: 14, padding: 20, boxShadow: '0 4px 16px rgba(30,64,175,0.4)' }}>
+              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Hækkeklip + Beskæring — samlet</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 6 }}>
+                <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
+                  Hækkeklip: {fmt(hedgeKlipTotal)} kr{'\n'}
+                  Beskæring: {fmt(beskæringTotal)} kr
                 </div>
               </div>
-            </>)}
+              <div style={{ color: '#fff', fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
+                {hedgeRawTotal.toLocaleString('da-DK', { style: 'currency', currency: 'DKK', maximumFractionDigits: 0 })}
+              </div>
+              <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, marginTop: 8 }}>
+                {fmt(hedgeKlipTotal)} + {fmt(beskæringTotal)} kr · inkl. moms
+              </div>
+            </div>
+          )}
           </>)}
         </>
       )}
@@ -986,8 +1024,13 @@ export default function Tilbud() {
           ) : quotes.map(q => {
             const cust     = customers.find(c => c.id === q.customerId);
             const typeIcon  = q.type === 'grass' ? '🌿' : q.type === 'window' ? '🪟' : '✂️';
-            const hedgeTypeLabel = q.params?.subType === 'beskæring' ? 'Beskæring' : 'Hækkeklip';
+            const hp = q.params || {};
+            const hedgeTypeLabel = (hp.klipOn && hp.beskæringOn) ? 'Hækkeklip + Beskæring'
+                                 : hp.beskæringOn ? 'Beskæring'
+                                 : hp.subType === 'beskæring' ? 'Beskæring'
+                                 : 'Hækkeklip';
             const typeLabel = q.type === 'grass' ? 'Græsslåning' : q.type === 'window' ? 'Vinduespudsning' : hedgeTypeLabel;
+            const qDiscount = hp.discount || 0;
             const isOpen    = quoteApptOpen === q.id;
             return (
               <div key={q.id} style={{ background: '#fff', borderRadius: 14, padding: 16, marginBottom: 10, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
@@ -999,8 +1042,11 @@ export default function Tilbud() {
                       {new Date(q.createdAt).toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </div>
                   </div>
-                  <div style={{ fontSize: 22, fontWeight: 900, color: '#2563EB' }}>
-                    {q.totalPrice.toLocaleString('da-DK')} kr
+                  <div style={{ textAlign: 'right' }}>
+                    {qDiscount > 0 && <div style={{ fontSize: 11, color: '#10B981', fontWeight: 700 }}>-{qDiscount}% rabat</div>}
+                    <div style={{ fontSize: 22, fontWeight: 900, color: '#2563EB' }}>
+                      {q.totalPrice.toLocaleString('da-DK')} kr
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -1041,6 +1087,33 @@ export default function Tilbud() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ══ RABAT ════════════════════════════════════════════════════════════ */}
+      {priceBeforeDiscount > 0 && serviceType !== 'saved' && (
+        <div style={{ margin: '10px 16px 0', background: '#fff', borderRadius: 14, padding: '12px 16px', boxShadow: '0 1px 6px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Rabat</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="number" inputMode="decimal" min="0" max="100"
+                value={discount || ''} placeholder="0"
+                onChange={e => setDiscount(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                style={{ width: 64, fontSize: 22, fontWeight: 800, background: '#F9FAFB', borderRadius: 8, padding: '6px 10px', textAlign: 'center', border: discount > 0 ? '2px solid #2563EB' : '2px solid #E5E7EB' }}
+              />
+              <span style={{ fontSize: 20, fontWeight: 700, color: '#6B7280' }}>%</span>
+            </div>
+          </div>
+          {discount > 0 ? (
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 13, color: '#9CA3AF', textDecoration: 'line-through' }}>{priceBeforeDiscount.toLocaleString('da-DK')} kr</div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: '#10B981' }}>{currentPrice.toLocaleString('da-DK')} kr</div>
+              <div style={{ fontSize: 12, color: '#10B981' }}>-{discountAmt.toLocaleString('da-DK')} kr sparet</div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: '#9CA3AF' }}>Ingen rabat</div>
+          )}
         </div>
       )}
 
