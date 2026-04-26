@@ -11,6 +11,7 @@ import {
 } from '../storage.js';
 import CalendarPicker from '../components/CalendarPicker.jsx';
 import { generateICS } from '../ics.js';
+import { createInvoice } from '../googleDrive.js';
 
 const MÅNEDER = ['Januar','Februar','Marts','April','Maj','Juni','Juli','August','September','Oktober','November','December'];
 const UGEDAGE = ['Ma','Ti','On','To','Fr','Lø','Sø'];
@@ -58,6 +59,8 @@ export default function Kalender() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [multiOff,  setMultiOff]  = useState(false);
   const [pendingOff, setPendingOff] = useState(new Set());
+  const [invoicingId, setInvoicingId] = useState(null);
+  const [invoiceResult, setInvoiceResult] = useState(null); // { apptId, nr, docUrl }
 
   useEffect(() => {
     const allAppts = getAppointments();
@@ -159,6 +162,20 @@ export default function Kalender() {
     const a   = document.createElement('a');
     a.href = url; a.download = 'KundeApp-aftaler.ics'; a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleFaktura = async (appt, cust, e) => {
+    e.stopPropagation();
+    setInvoicingId(appt.id);
+    setInvoiceResult(null);
+    try {
+      const result = await createInvoice({ appointment: appt, customer: cust });
+      setInvoiceResult({ apptId: appt.id, ...result });
+    } catch (err) {
+      alert(`Fejl ved oprettelse af faktura: ${err.message}`);
+    } finally {
+      setInvoicingId(null);
+    }
   };
 
   const firstDow  = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
@@ -613,6 +630,22 @@ export default function Kalender() {
                         }
                         {a.duration > 0 && <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginTop: 4 }}>⏱ {formatDuration(a.duration)}</div>}
                         {a.price > 0    && <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginTop: 2 }}>💰 {a.price.toLocaleString('da-DK')} kr</div>}
+                        {invoiceResult?.apptId === a.id ? (
+                          <div style={{ marginTop: 8, background: '#D1FAE5', borderRadius: 8, padding: '6px 10px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>✅ Faktura {invoiceResult.nr} oprettet</span>
+                            <a href={invoiceResult.docUrl} target="_blank" rel="noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              style={{ color: '#059669', fontWeight: 700, textDecoration: 'underline' }}>Åbn</a>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={e => handleFaktura(a, cust, e)}
+                            disabled={invoicingId === a.id}
+                            style={{ marginTop: 8, background: '#F0FDF4', color: '#059669', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, border: '1.5px solid #86EFAC', opacity: invoicingId === a.id ? 0.6 : 1 }}
+                          >
+                            {invoicingId === a.id ? '⏳ Opretter faktura...' : '🧾 Opret faktura'}
+                          </button>
+                        )}
                       </div>
                     );
                   })}
