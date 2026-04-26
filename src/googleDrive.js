@@ -1,11 +1,11 @@
-const CLIENT_ID = '38149856270-tevvf2jl1juim7b0tpai3jn9l84jaq0r.apps.googleusercontent.com';
+const CLIENT_ID = '243575332428-69692bubcsahm1pvpsgpb7vjaa5rvnha.apps.googleusercontent.com';
 const SCOPES = [
   'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/gmail.send',
 ].join(' ');
-const SCOPE_VER = 'v2'; // bump when scopes change to force re-auth
+const SCOPE_VER = 'v3'; // bump when scopes change to force re-auth
 
 export const FIRMA = {
   navn:            'GrønRude',
