@@ -392,15 +392,15 @@ export async function writeExpense(expense, photoFile) {
       method: 'PUT',
       body: JSON.stringify({
         values: [[
-          sheetsDateFromStr(expense.date),
-          expense.description,
-          expense.category,
-          expense.amount,
-          expense.type === 'kørsel' ? 'Kørsel' : 'Kvittering',
-          expense.type === 'kørsel' ? `${expense.fra || ''}→${expense.til || ''}` : '',
-          expense.km || '',
-          expense.rate || '',
-          photoUrl,
+          sheetsDateFromStr(expense.date),                                                  // B Dato
+          expense.description,                                                               // C Leverandør
+          expense.type === 'kørsel' ? `${expense.fra || ''}→${expense.til || ''}` : '',    // D Beskrivelse
+          expense.category,                                                                  // E Kategori
+          expense.amount,                                                                    // F Beløb ekskl. moms
+          0,                                                                                 // G Moms (momsfritaget)
+          '',                                                                                // H Betalingsmetode
+          expense.type === 'kørsel' ? `${expense.km} km × ${expense.rate} kr/km` : '',     // I Kørsel info
+          photoUrl,                                                                          // J Foto link
         ]],
       }),
     }
@@ -422,7 +422,7 @@ async function setupOversigt(sheetId, bilagTabName) {
     const col = cols[m - 1];
     row5.push(`=SUMPRODUCT((${bilagTabName}!$B$3:$B$200<>"")*(MONTH(${bilagTabName}!$B$3:$B$200)=${m})*(YEAR(${bilagTabName}!$B$3:$B$200)=YEAR(TODAY()))*${bilagTabName}!$F$3:$F$200)`);
     row6.push(udTab
-      ? `=SUMPRODUCT((${udTab}!$B$3:$B$200<>"")*(MONTH(${udTab}!$B$3:$B$200)=${m})*(YEAR(${udTab}!$B$3:$B$200)=YEAR(TODAY()))*${udTab}!$E$3:$E$200)`
+      ? `=SUMPRODUCT((${udTab}!$B$3:$B$200<>"")*(MONTH(${udTab}!$B$3:$B$200)=${m})*(YEAR(${udTab}!$B$3:$B$200)=YEAR(TODAY()))*${udTab}!$F$3:$F$200)`
       : '0');
     row7.push(`=${col}5-${col}6`);
     row8.push('0');
@@ -433,7 +433,7 @@ async function setupOversigt(sheetId, bilagTabName) {
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${ovEncoded}!B5:M8?valueInputOption=USER_ENTERED`,
     { method: 'PUT', body: JSON.stringify({ values: [row5, row6, row7, row8] }) }
   );
-  localStorage.setItem('g_oversigt_v2', '1');
+  localStorage.setItem('g_oversigt_v3', '1');
 }
 
 // ── Main: create invoice ───────────────────────────────────────────────────
@@ -472,7 +472,7 @@ export async function createInvoice({ appointment, customer }) {
   );
 
   // ── Oversigt formulas (write once) ────────────────────────────────────
-  if (!localStorage.getItem('g_oversigt_v2')) {
+  if (!localStorage.getItem('g_oversigt_v3')) {
     setupOversigt(sheetId, sheetTab).catch(() => {});
   }
 
