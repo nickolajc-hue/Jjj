@@ -631,11 +631,14 @@ export default function Kalender() {
                         {a.duration > 0 && <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginTop: 4 }}>⏱ {formatDuration(a.duration)}</div>}
                         {a.price > 0    && <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginTop: 2 }}>💰 {a.price.toLocaleString('da-DK')} kr</div>}
                         {invoiceResult?.apptId === a.id ? (
-                          <div style={{ marginTop: 8, background: '#D1FAE5', borderRadius: 8, padding: '6px 10px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span>✅ Faktura {invoiceResult.nr} oprettet</span>
-                            <a href={invoiceResult.docUrl} target="_blank" rel="noreferrer"
-                              onClick={e => e.stopPropagation()}
-                              style={{ color: '#059669', fontWeight: 700, textDecoration: 'underline' }}>Åbn</a>
+                          <div style={{ marginTop: 8, background: '#D1FAE5', borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span>✅ Faktura {invoiceResult.nr} oprettet</span>
+                              <a href={invoiceResult.docUrl} target="_blank" rel="noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                style={{ color: '#059669', fontWeight: 700, textDecoration: 'underline' }}>Åbn</a>
+                            </div>
+                            {invoiceResult.emailSent && <div style={{ color: '#065F46', marginTop: 3 }}>📧 Sendt til {cust?.email}</div>}
                           </div>
                         ) : (
                           <button

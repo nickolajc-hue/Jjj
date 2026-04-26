@@ -3,7 +3,9 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/gmail.send',
 ].join(' ');
+const SCOPE_VER = 'v2'; // bump when scopes change to force re-auth
 
 export const FIRMA = {
   navn:            'GrønRude',
@@ -29,6 +31,11 @@ function loadGis() {
 
 export async function signIn() {
   await loadGis();
+  // Force re-auth if scopes have changed
+  if (localStorage.getItem('g_scope_ver') !== SCOPE_VER) {
+    ['g_tok','g_exp','g_folder','g_sheet'].forEach(k => localStorage.removeItem(k));
+    localStorage.setItem('g_scope_ver', SCOPE_VER);
+  }
   const tok    = localStorage.getItem('g_tok');
   const expiry = parseInt(localStorage.getItem('g_exp') || '0');
   if (tok && Date.now() < expiry - 120_000) return tok;
@@ -132,6 +139,59 @@ function fmtDate(d) {
 }
 function fmtKr(n) {
   return n.toLocaleString('da-DK') + ' kr';
+}
+
+// ── Share doc publicly (anyone with link can view) ─────────────────────────
+async function shareDoc(fileId) {
+  await api(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+    method: 'POST',
+    body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+  });
+}
+
+// ── Send invoice email via Gmail API ───────────────────────────────────────
+async function sendInvoiceEmail({ to, custName, nr, service, amount, due, docUrl }) {
+  const subject = `Faktura ${nr} fra ${FIRMA.navn}`;
+  const body = [
+    `Kære ${custName},`,
+    '',
+    `Tak for dit besøg! Herunder finder du faktura ${nr} for ${service}.`,
+    '',
+    `Faktura nr.:     ${nr}`,
+    `Beløb:           ${fmtKr(amount)} inkl. moms`,
+    `Forfaldsdato:    ${fmtDate(due)}`,
+    '',
+    'Beløbet bedes indbetalt til:',
+    `Reg.nr. ${FIRMA.bankReg}  /  Kontonr. ${FIRMA.bankKonto}`,
+    `Husk at angive faktura nr. ${nr} ved bankoverførsel.`,
+    '',
+    `Se faktura online: ${docUrl}`,
+    '',
+    'Med venlig hilsen',
+    FIRMA.navn,
+    `Tlf: ${FIRMA.telefon}`,
+    FIRMA.email,
+  ].join('\n');
+
+  const mime = [
+    `From: ${FIRMA.navn} <${FIRMA.email}>`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: quoted-printable',
+    '',
+    body,
+  ].join('\r\n');
+
+  // base64url encode
+  const raw = btoa(unescape(encodeURIComponent(mime)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  await api('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    body: JSON.stringify({ raw }),
+  });
 }
 
 // ── Build formatted Google Doc ─────────────────────────────────────────────
@@ -258,7 +318,7 @@ async function buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, servi
     });
   }
 
-  return `https://docs.google.com/document/d/${docId}/edit`;
+  return { docUrl: `https://docs.google.com/document/d/${docId}/edit`, docId };
 }
 
 // ── Main: create invoice ───────────────────────────────────────────────────
@@ -278,7 +338,9 @@ export async function createInvoice({ appointment, customer }) {
   const custPhone = customer?.phone   || '';
 
   // ── Formatted Google Doc ───────────────────────────────────────────────
-  const docUrl = await buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, service, custName, custAddr, custPhone });
+  const { docUrl, docId } = await buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, service, custName, custAddr, custPhone });
+
+  await shareDoc(docId);
 
   // ── Google Sheet row ───────────────────────────────────────────────────
   await api(
@@ -291,5 +353,12 @@ export async function createInvoice({ appointment, customer }) {
     }
   );
 
-  return { nr, docUrl };
+  // ── Send email via Gmail ───────────────────────────────────────────────
+  let emailSent = false;
+  if (customer?.email) {
+    await sendInvoiceEmail({ to: customer.email, custName, nr, service, amount, due, docUrl });
+    emailSent = true;
+  }
+
+  return { nr, docUrl, emailSent };
 }
