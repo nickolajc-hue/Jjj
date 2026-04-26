@@ -134,6 +134,132 @@ function fmtKr(n) {
   return n.toLocaleString('da-DK') + ' kr';
 }
 
+// ── Build formatted Google Doc ─────────────────────────────────────────────
+async function buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, service, custName, custAddr, custPhone }) {
+  const GRAY  = { red: 0.55, green: 0.55, blue: 0.55 };
+  const BLUE  = { red: 0.15, green: 0.37, blue: 0.92 };
+  const LINE  = '─'.repeat(54);
+  const TAB_PT = 420; // right-aligned tab stop position
+
+  // Track text segments with formatting metadata
+  const parts = [];
+  let idx = 1;
+  const seg = (text, fmt = {}) => {
+    const start = idx;
+    idx += text.length;
+    parts.push({ text, start, end: idx, ...fmt });
+  };
+
+  // ── Content ──────────────────────────────────────────────────────────────
+  seg(`${FIRMA.navn}\n`,                                            { bold: true, size: 20, color: BLUE });
+  seg(`${FIRMA.adresse}\n`,                                         { size: 10, color: GRAY });
+  seg(`Tlf: ${FIRMA.telefon}   ·   ${FIRMA.email}\n`,              { size: 10, color: GRAY });
+  seg(`CVR: ${FIRMA.cvr}\n`,                                        { size: 10, color: GRAY });
+  seg('\n');
+  seg(`${LINE}\n`,                                                  { color: GRAY });
+  seg('FAKTURA\n',                                                  { bold: true, size: 26, center: true });
+  seg(`${LINE}\n`,                                                  { color: GRAY });
+  seg('\n');
+  seg(`Faktura nr.:\t${nr}\n`,                                      { size: 11, tab: TAB_PT });
+  seg(`Dato:\t${fmtDate(date)}\n`,                                  { size: 11, tab: TAB_PT });
+  seg(`Forfaldsdato:\t${fmtDate(due)}\n`,                           { size: 11, tab: TAB_PT });
+  seg('\n');
+  seg('Faktureres til:\n',                                          { bold: true, size: 11, color: GRAY });
+  seg(`${custName}\n`,                                              { bold: true, size: 13 });
+  if (custAddr)  seg(`${custAddr}\n`,                               { size: 11 });
+  if (custPhone) seg(`${custPhone}\n`,                              { size: 11 });
+  seg('\n');
+  seg(`${LINE}\n`,                                                  { color: GRAY });
+  seg(`Beskrivelse\tBeløb\n`,                                       { bold: true, size: 11, tab: TAB_PT });
+  seg(`${LINE}\n`,                                                  { color: GRAY });
+  seg(`${service}\t${fmtKr(amount)}\n`,                             { size: 11, tab: TAB_PT });
+  seg(`${LINE}\n`,                                                  { color: GRAY });
+  seg('\n');
+  seg(`Subtotal ekskl. moms:\t${fmtKr(exclMoms)}\n`,               { size: 11, tab: TAB_PT });
+  seg(`Moms 25%:\t${fmtKr(moms)}\n`,                               { size: 11, tab: TAB_PT });
+  seg(`${LINE}\n`,                                                  { color: GRAY });
+  seg(`TOTAL DKK:\t${fmtKr(amount)}\n`,                            { bold: true, size: 13, tab: TAB_PT });
+  seg(`${LINE}\n`,                                                  { color: GRAY });
+  seg('\n');
+  seg(`Betalingsbetingelser: Netto ${FIRMA.betalingsfrist} dage — Forfaldsdato: ${fmtDate(due)}\n`, { bold: true, size: 10 });
+  seg('\n');
+  seg(`Beløbet indbetales på bankkonto:\n`,                         { size: 10 });
+  seg(`Reg.nr. ${FIRMA.bankReg}  /  Kontonr. ${FIRMA.bankKonto}\n`, { size: 10 });
+  seg(`Faktura nr. ${nr} bedes angivet ved bankoverførsel\n`,       { size: 10 });
+  seg('\n');
+  seg(`${FIRMA.navn}  ·  ${FIRMA.adresse}  ·  CVR: ${FIRMA.cvr}  ·  ${FIRMA.email}\n`,
+    { size: 9, color: GRAY, center: true });
+
+  const fullText = parts.map(p => p.text).join('');
+
+  // ── Create file ───────────────────────────────────────────────────────────
+  const docFile = await api('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: `Faktura ${nr} - ${custName}`,
+      mimeType: 'application/vnd.google-apps.document',
+      parents: [folderId],
+    }),
+  });
+  const docId = docFile.id;
+
+  // Insert all text
+  await api(`https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`, {
+    method: 'POST',
+    body: JSON.stringify({
+      requests: [{ insertText: { location: { index: 1 }, text: fullText } }],
+    }),
+  });
+
+  // ── Apply formatting ───────────────────────────────────────────────────────
+  const requests = [];
+
+  for (const p of parts) {
+    const textEnd = p.end - 1; // exclude \n from text styling
+    if (textEnd > p.start) {
+      const textStyle = {};
+      const fields = [];
+      if (p.bold)  { textStyle.bold = true; fields.push('bold'); }
+      if (p.size)  { textStyle.fontSize = { magnitude: p.size, unit: 'PT' }; fields.push('fontSize'); }
+      if (p.color) { textStyle.foregroundColor = { color: { rgbColor: p.color } }; fields.push('foregroundColor'); }
+      if (fields.length > 0) {
+        requests.push({
+          updateTextStyle: {
+            range: { startIndex: p.start, endIndex: textEnd },
+            textStyle, fields: fields.join(','),
+          },
+        });
+      }
+    }
+
+    const paraStyle = {};
+    const paraFields = [];
+    if (p.center) { paraStyle.alignment = 'CENTER'; paraFields.push('alignment'); }
+    if (p.tab) {
+      paraStyle.tabStops = [{ offset: { magnitude: p.tab, unit: 'PT' }, alignment: 'END' }];
+      paraFields.push('tabStops');
+    }
+    if (paraFields.length > 0) {
+      requests.push({
+        updateParagraphStyle: {
+          range: { startIndex: p.start, endIndex: p.end },
+          paragraphStyle: paraStyle,
+          fields: paraFields.join(','),
+        },
+      });
+    }
+  }
+
+  if (requests.length > 0) {
+    await api(`https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({ requests }),
+    });
+  }
+
+  return `https://docs.google.com/document/d/${docId}/edit`;
+}
+
 // ── Main: create invoice ───────────────────────────────────────────────────
 export async function createInvoice({ appointment, customer }) {
   const folderId = await getFolder();
@@ -150,62 +276,8 @@ export async function createInvoice({ appointment, customer }) {
   const custAddr  = customer?.address || '';
   const custPhone = customer?.phone   || '';
 
-  // ── Google Doc ─────────────────────────────────────────────────────────
-  const line  = '─'.repeat(50);
-  const dline = '═'.repeat(50);
-  const text  = [
-    FIRMA.navn,
-    FIRMA.adresse,
-    `Tlf: ${FIRMA.telefon}   |   E-mail: ${FIRMA.email}`,
-    `CVR: ${FIRMA.cvr}`,
-    '',
-    dline,
-    'F A K T U R A',
-    dline,
-    '',
-    `Faktura nr.:   ${nr}`,
-    `Dato:          ${fmtDate(date)}`,
-    `Forfalder:     ${fmtDate(due)}`,
-    '',
-    'Faktureres til:',
-    custName,
-    custAddr,
-    custPhone,
-    '',
-    line,
-    'Beskrivelse                                  Beløb',
-    line,
-    service,
-    '',
-    `Ekskl. moms:                    ${fmtKr(exclMoms)}`,
-    `Moms (25%):                     ${fmtKr(moms)}`,
-    line,
-    `TOTAL inkl. moms:               ${fmtKr(amount)}`,
-    line,
-    '',
-    `Betales til:   Reg. ${FIRMA.bankReg}   Konto: ${FIRMA.bankKonto}`,
-    `Betalingsfrist: ${FIRMA.betalingsfrist} dage netto`,
-    `Reference:     Faktura ${nr}`,
-    '',
-    'Tak for handlen!',
-    FIRMA.navn,
-  ].join('\n');
-
-  const docFile = await api('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    body: JSON.stringify({
-      name: `Faktura ${nr} - ${custName}`,
-      mimeType: 'application/vnd.google-apps.document',
-      parents: [folderId],
-    }),
-  });
-
-  await api(`https://docs.googleapis.com/v1/documents/${docFile.id}:batchUpdate`, {
-    method: 'POST',
-    body: JSON.stringify({
-      requests: [{ insertText: { location: { index: 1 }, text } }],
-    }),
-  });
+  // ── Formatted Google Doc ───────────────────────────────────────────────
+  const docUrl = await buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, service, custName, custAddr, custPhone });
 
   // ── Google Sheet row ───────────────────────────────────────────────────
   await api(
@@ -218,5 +290,5 @@ export async function createInvoice({ appointment, customer }) {
     }
   );
 
-  return { nr, docUrl: `https://docs.google.com/document/d/${docFile.id}/edit` };
+  return { nr, docUrl };
 }
