@@ -159,6 +159,15 @@ export function occursOnDate(appt, targetDate) {
   }
 }
 
+const EXPENSES_KEY = 'kundeapp_expenses';
+export function getExpenses() {
+  try { return JSON.parse(localStorage.getItem(EXPENSES_KEY) || '[]'); }
+  catch { return []; }
+}
+export function saveExpenses(list) {
+  localStorage.setItem(EXPENSES_KEY, JSON.stringify(list));
+}
+
 export function toDateStr(date) {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

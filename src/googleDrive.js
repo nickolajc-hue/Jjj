@@ -319,6 +319,39 @@ async function buildDoc(folderId, { nr, date, due, amount, service, custName, cu
   return { docUrl: `https://docs.google.com/document/d/${docId}/edit`, docId };
 }
 
+// ── Write expense to Udgifter sheet ───────────────────────────────────────
+export async function writeExpense(expense) {
+  const { id: sheetId } = await getSheet();
+  const meta = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties(title)`);
+  const tabs = meta.sheets.map(s => s.properties.title);
+  const udTab = tabs.find(t => t.toLowerCase().includes('udgift'));
+  if (!udTab) throw new Error(`Ingen fane med "udgift" — faner: ${tabs.join(', ')}`);
+
+  const tab = encodeURIComponent(udTab);
+  const check = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B3:B200`);
+  const filled = (check.values || []).filter(r => r && r[0]);
+  const row = 3 + filled.length;
+
+  await api(
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${row}:I${row}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        values: [[
+          expense.date,
+          expense.description,
+          expense.category,
+          expense.amount,
+          expense.type === 'kørsel' ? 'Kørsel' : 'Kvittering',
+          expense.type === 'kørsel' ? `${expense.fra || ''}→${expense.til || ''}` : '',
+          expense.km || '',
+          expense.rate || '',
+        ]],
+      }),
+    }
+  );
+}
+
 // ── Main: create invoice ───────────────────────────────────────────────────
 export async function createInvoice({ appointment, customer }) {
   const folderId = await getFolder();
