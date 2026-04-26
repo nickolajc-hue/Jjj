@@ -136,12 +136,17 @@ function fmtKr(n) {
 
 // ── Build formatted Google Doc ─────────────────────────────────────────────
 async function buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, service, custName, custAddr, custPhone }) {
-  const GRAY  = { red: 0.55, green: 0.55, blue: 0.55 };
-  const BLUE  = { red: 0.15, green: 0.37, blue: 0.92 };
-  const LINE  = '─'.repeat(54);
-  const TAB_PT = 420; // right-aligned tab stop position
+  const GRAY = { red: 0.55, green: 0.55, blue: 0.55 };
+  const BLUE = { red: 0.15, green: 0.37, blue: 0.92 };
+  const LINE = '─'.repeat(54);
 
-  // Track text segments with formatting metadata
+  // pad(label, value) — left label, right-padded value in 54 chars
+  const pad = (label, value) => {
+    const total = 54;
+    const spaces = Math.max(1, total - label.length - value.length);
+    return label + ' '.repeat(spaces) + value;
+  };
+
   const parts = [];
   let idx = 1;
   const seg = (text, fmt = {}) => {
@@ -150,42 +155,42 @@ async function buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, servi
     parts.push({ text, start, end: idx, ...fmt });
   };
 
-  // ── Content ──────────────────────────────────────────────────────────────
-  seg(`${FIRMA.navn}\n`,                                            { bold: true, size: 20, color: BLUE });
-  seg(`${FIRMA.adresse}\n`,                                         { size: 10, color: GRAY });
-  seg(`Tlf: ${FIRMA.telefon}   ·   ${FIRMA.email}\n`,              { size: 10, color: GRAY });
-  seg(`CVR: ${FIRMA.cvr}\n`,                                        { size: 10, color: GRAY });
+  // ── Content ────────────────────────────────────────────────────────────
+  seg(`${FIRMA.navn}\n`,                                                { bold: true, size: 20, color: BLUE });
+  seg(`${FIRMA.adresse}\n`,                                             { size: 10, color: GRAY });
+  seg(`Tlf: ${FIRMA.telefon}   ·   ${FIRMA.email}\n`,                  { size: 10, color: GRAY });
+  seg(`CVR: ${FIRMA.cvr}\n`,                                            { size: 10, color: GRAY });
   seg('\n');
-  seg(`${LINE}\n`,                                                  { color: GRAY });
-  seg('FAKTURA\n',                                                  { bold: true, size: 26, center: true });
-  seg(`${LINE}\n`,                                                  { color: GRAY });
+  seg(`${LINE}\n`,                                                      { color: GRAY });
+  seg('FAKTURA\n',                                                      { bold: true, size: 26, center: true });
+  seg(`${LINE}\n`,                                                      { color: GRAY });
   seg('\n');
-  seg(`Faktura nr.:\t${nr}\n`,                                      { size: 11, tab: TAB_PT });
-  seg(`Dato:\t${fmtDate(date)}\n`,                                  { size: 11, tab: TAB_PT });
-  seg(`Forfaldsdato:\t${fmtDate(due)}\n`,                           { size: 11, tab: TAB_PT });
+  seg(`${pad('Faktura nr.:', nr)}\n`,                                   { size: 11 });
+  seg(`${pad('Dato:', fmtDate(date))}\n`,                               { size: 11 });
+  seg(`${pad('Forfaldsdato:', fmtDate(due))}\n`,                        { size: 11 });
   seg('\n');
-  seg('Faktureres til:\n',                                          { bold: true, size: 11, color: GRAY });
-  seg(`${custName}\n`,                                              { bold: true, size: 13 });
-  if (custAddr)  seg(`${custAddr}\n`,                               { size: 11 });
-  if (custPhone) seg(`${custPhone}\n`,                              { size: 11 });
+  seg('Faktureres til:\n',                                              { bold: true, size: 11, color: GRAY });
+  seg(`${custName}\n`,                                                  { bold: true, size: 13 });
+  if (custAddr)  seg(`${custAddr}\n`,                                   { size: 11 });
+  if (custPhone) seg(`${custPhone}\n`,                                  { size: 11 });
   seg('\n');
-  seg(`${LINE}\n`,                                                  { color: GRAY });
-  seg(`Beskrivelse\tBeløb\n`,                                       { bold: true, size: 11, tab: TAB_PT });
-  seg(`${LINE}\n`,                                                  { color: GRAY });
-  seg(`${service}\t${fmtKr(amount)}\n`,                             { size: 11, tab: TAB_PT });
-  seg(`${LINE}\n`,                                                  { color: GRAY });
+  seg(`${LINE}\n`,                                                      { color: GRAY });
+  seg(`${pad('Beskrivelse', 'Beløb')}\n`,                               { bold: true, size: 11 });
+  seg(`${LINE}\n`,                                                      { color: GRAY });
+  seg(`${pad(service, fmtKr(amount))}\n`,                               { size: 11 });
+  seg(`${LINE}\n`,                                                      { color: GRAY });
   seg('\n');
-  seg(`Subtotal ekskl. moms:\t${fmtKr(exclMoms)}\n`,               { size: 11, tab: TAB_PT });
-  seg(`Moms 25%:\t${fmtKr(moms)}\n`,                               { size: 11, tab: TAB_PT });
-  seg(`${LINE}\n`,                                                  { color: GRAY });
-  seg(`TOTAL DKK:\t${fmtKr(amount)}\n`,                            { bold: true, size: 13, tab: TAB_PT });
-  seg(`${LINE}\n`,                                                  { color: GRAY });
+  seg(`${pad('Subtotal ekskl. moms:', fmtKr(exclMoms))}\n`,            { size: 11 });
+  seg(`${pad('Moms 25%:', fmtKr(moms))}\n`,                            { size: 11 });
+  seg(`${LINE}\n`,                                                      { color: GRAY });
+  seg(`${pad('TOTAL DKK:', fmtKr(amount))}\n`,                         { bold: true, size: 13 });
+  seg(`${LINE}\n`,                                                      { color: GRAY });
   seg('\n');
   seg(`Betalingsbetingelser: Netto ${FIRMA.betalingsfrist} dage — Forfaldsdato: ${fmtDate(due)}\n`, { bold: true, size: 10 });
   seg('\n');
-  seg(`Beløbet indbetales på bankkonto:\n`,                         { size: 10 });
-  seg(`Reg.nr. ${FIRMA.bankReg}  /  Kontonr. ${FIRMA.bankKonto}\n`, { size: 10 });
-  seg(`Faktura nr. ${nr} bedes angivet ved bankoverførsel\n`,       { size: 10 });
+  seg(`Beløbet indbetales på bankkonto:\n`,                             { size: 10 });
+  seg(`Reg.nr. ${FIRMA.bankReg}  /  Kontonr. ${FIRMA.bankKonto}\n`,    { size: 10 });
+  seg(`Faktura nr. ${nr} bedes angivet ved bankoverførsel\n`,           { size: 10 });
   seg('\n');
   seg(`${FIRMA.navn}  ·  ${FIRMA.adresse}  ·  CVR: ${FIRMA.cvr}  ·  ${FIRMA.email}\n`,
     { size: 9, color: GRAY, center: true });
@@ -235,10 +240,6 @@ async function buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, servi
     const paraStyle = {};
     const paraFields = [];
     if (p.center) { paraStyle.alignment = 'CENTER'; paraFields.push('alignment'); }
-    if (p.tab) {
-      paraStyle.tabStops = [{ offset: { magnitude: p.tab, unit: 'PT' }, alignment: 'END' }];
-      paraFields.push('tabStops');
-    }
     if (paraFields.length > 0) {
       requests.push({
         updateParagraphStyle: {
