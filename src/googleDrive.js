@@ -436,6 +436,58 @@ async function setupOversigt(sheetId, bilagTabName) {
   localStorage.setItem('g_oversigt_v3', '1');
 }
 
+// ── Fetch actual revenue + expenses from sheet ────────────────────────────
+export async function fetchRegnskab() {
+  const { id: sheetId, tab: bilagTabName } = await getSheet();
+  const meta = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties(title)`);
+  const tabs = meta.sheets.map(s => s.properties.title);
+  const udTabName = tabs.find(t => t.toLowerCase().includes('udgift'));
+
+  const now = new Date();
+  const curMonth = now.getMonth() + 1;
+  const curYear = now.getFullYear();
+
+  // Read B-F columns; dates come back as serial numbers with UNFORMATTED_VALUE
+  const bilagEnc = encodeURIComponent(bilagTabName);
+  const bilagRes = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${bilagEnc}!B3:F200?valueRenderOption=UNFORMATTED_VALUE`);
+  const udRes = udTabName
+    ? await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(udTabName)}!B3:F200?valueRenderOption=UNFORMATTED_VALUE`)
+    : null;
+
+  // Convert Google Sheets serial date to JS Date (UTC)
+  function fromSerial(s) {
+    const n = Number(s);
+    if (!n || isNaN(n)) return null;
+    return new Date((n - 25569) * 86400 * 1000);
+  }
+
+  function sumRows(rows, amtIdx, year, month) {
+    return (rows || []).reduce((acc, r) => {
+      const d = fromSerial(r?.[0]);
+      if (!d) return acc;
+      if (d.getUTCFullYear() !== year) return acc;
+      if (month && d.getUTCMonth() + 1 !== month) return acc;
+      return acc + (parseFloat(r[amtIdx]) || 0);
+    }, 0);
+  }
+
+  const bilagRows = (bilagRes.values || []).filter(r => r?.[0]);
+  const udRows = (udRes?.values || []).filter(r => r?.[0]);
+
+  // Bilag: B=Dato(0), F=Beløb ekskl. moms(4)
+  // Udgifter: B=Dato(0), F=Beløb(4)
+  return {
+    omsætning: {
+      monthly: Math.round(sumRows(bilagRows, 4, curYear, curMonth)),
+      yearly:  Math.round(sumRows(bilagRows, 4, curYear, null)),
+    },
+    udgifter: {
+      monthly: Math.round(sumRows(udRows, 4, curYear, curMonth)),
+      yearly:  Math.round(sumRows(udRows, 4, curYear, null)),
+    },
+  };
+}
+
 // ── Main: create invoice ───────────────────────────────────────────────────
 export async function createInvoice({ appointment, customer }) {
   const folderId = await getFolder();

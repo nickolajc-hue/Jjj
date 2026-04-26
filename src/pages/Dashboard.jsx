@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCustomers, getAppointments, occursOnDate, calcExpectedIncome } from '../storage.js';
+import { fetchRegnskab, isConnected } from '../googleDrive.js';
 
 const s = {
   header: { background: '#2563EB', color: '#fff', padding: '24px 20px 48px', paddingTop: 'calc(24px + env(safe-area-inset-top))' },
@@ -87,14 +88,75 @@ function IncomeChart({ appointments }) {
   );
 }
 
+function RegnskabCard({ data, loading, err, onRefresh }) {
+  const fmtKr2 = n => n.toLocaleString('da-DK') + ' kr';
+  const resultatM = data ? data.omsætning.monthly - data.udgifter.monthly : 0;
+  const resultatY = data ? data.omsætning.yearly - data.udgifter.yearly : 0;
+
+  return (
+    <div style={s.section}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={s.sectionTitle}>📊 Regnskab (Google Sheet)</div>
+        <button onClick={onRefresh} style={{ fontSize: 18, background: 'none', color: '#9CA3AF', padding: '0 2px' }} title="Opdater">↻</button>
+      </div>
+      {loading && <div style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', padding: '8px 0' }}>Henter...</div>}
+      {err && <div style={{ color: '#EF4444', fontSize: 12, padding: '4px 0' }}>⚠️ {err}</div>}
+      {!loading && !err && !data && (
+        <div style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', padding: '8px 0' }}>Tryk ↻ for at hente tal fra dit regneark</div>
+      )}
+      {!loading && data && (
+        <div style={{ display: 'flex', gap: 10 }}>
+          {[
+            { label: 'Denne måned', om: data.omsætning.monthly, ud: data.udgifter.monthly, res: resultatM },
+            { label: 'Dette år', om: data.omsætning.yearly, ud: data.udgifter.yearly, res: resultatY },
+          ].map(col => (
+            <div key={col.label} style={{ flex: 1, background: '#F9FAFB', borderRadius: 12, padding: '12px 10px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
+                {col.label}
+              </div>
+              {[
+                { label: 'Omsætning', val: col.om, color: '#10B981' },
+                { label: 'Udgifter', val: col.ud, color: '#EF4444' },
+              ].map(row => (
+                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: '#6B7280' }}>{row.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: row.color }}>{fmtKr2(row.val)}</span>
+                </div>
+              ))}
+              <div style={{ borderTop: '1px solid #E5E7EB', paddingTop: 6, marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>Resultat</span>
+                <span style={{ fontSize: 14, fontWeight: 900, color: col.res >= 0 ? '#2563EB' : '#EF4444' }}>{fmtKr2(col.res)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [counts, setCounts] = useState({ customers: 0, upcoming: 0, today: 0 });
   const [income, setIncome] = useState({ monthly: 0, yearly: 0 });
   const [appointments, setAppointments] = useState([]);
   const [nextAppts, setNextAppts] = useState([]);
+  const [regnskab, setRegnskab] = useState(null);
+  const [regnskabLoading, setRegnskabLoading] = useState(false);
+  const [regnskabErr, setRegnskabErr] = useState(null);
+
+  const loadRegnskab = () => {
+    if (!isConnected()) return;
+    setRegnskabLoading(true);
+    setRegnskabErr(null);
+    fetchRegnskab()
+      .then(r => setRegnskab(r))
+      .catch(e => setRegnskabErr(e.message))
+      .finally(() => setRegnskabLoading(false));
+  };
 
   useEffect(() => {
+    loadRegnskab();
     const customers = getCustomers();
     const appts = getAppointments();
     const customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
@@ -181,6 +243,11 @@ export default function Dashboard() {
           <IncomeChart appointments={appointments} />
         </div>
       </div>
+
+      {/* Regnskab fra Google Sheet */}
+      {isConnected() && (
+        <RegnskabCard data={regnskab} loading={regnskabLoading} err={regnskabErr} onRefresh={loadRegnskab} />
+      )}
 
       {/* Næste aftaler */}
       {nextAppts.length > 0 && (
