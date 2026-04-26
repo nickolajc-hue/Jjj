@@ -20,6 +20,7 @@ export default function Udgift() {
   const [category, setCategory] = useState('Andet');
   const [amount, setAmount] = useState('');
   const [photoPreview, setPhotoPreview] = useState(null);
+  const galleryRef = useRef(null);
   const [fra, setFra] = useState('');
   const [til, setTil] = useState('');
   const [km, setKm] = useState('');
@@ -151,13 +152,24 @@ export default function Udgift() {
                 <label style={labelStyle}>Kvittering billede (valgfri)</label>
                 <input ref={photoRef} type="file" accept="image/*" capture="environment"
                   onChange={handlePhoto} style={{ display: 'none' }} />
-                <button onClick={() => photoRef.current?.click()} style={{
-                  width: '100%', padding: '12px', borderRadius: 12,
-                  border: '2px dashed #A7F3D0', background: '#F0FDF4',
-                  color: '#059669', fontSize: 13, fontWeight: 700,
-                }}>
-                  📷 Tag billede af kvittering
-                </button>
+                <input ref={galleryRef} type="file" accept="image/*"
+                  onChange={handlePhoto} style={{ display: 'none' }} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => photoRef.current?.click()} style={{
+                    flex: 1, padding: '11px 0', borderRadius: 12,
+                    border: '2px dashed #A7F3D0', background: '#F0FDF4',
+                    color: '#059669', fontSize: 13, fontWeight: 700,
+                  }}>
+                    📷 Kamera
+                  </button>
+                  <button onClick={() => galleryRef.current?.click()} style={{
+                    flex: 1, padding: '11px 0', borderRadius: 12,
+                    border: '2px dashed #A7F3D0', background: '#F0FDF4',
+                    color: '#059669', fontSize: 13, fontWeight: 700,
+                  }}>
+                    🖼 Fotos
+                  </button>
+                </div>
                 {photoPreview && (
                   <div style={{ position: 'relative', marginTop: 8 }}>
                     <img src={photoPreview} alt="" style={{ width: '100%', borderRadius: 10, maxHeight: 220, objectFit: 'cover' }} />
