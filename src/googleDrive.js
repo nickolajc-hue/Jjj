@@ -97,30 +97,17 @@ async function getFolder() {
   return id;
 }
 
-async function getSheet(folderId) {
+async function getSheet() {
   const cached = localStorage.getItem('g_sheet');
   if (cached) return cached;
 
-  const name = 'Regnskab 2026';
-  const q = encodeURIComponent(`name='${name}' and '${folderId}' in parents and trashed=false`);
+  const name = 'GronRude_Regnskab_2025';
+  const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`);
   const res = await api(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`);
 
-  let id;
-  if (res.files.length > 0) {
-    id = res.files[0].id;
-  } else {
-    const f = await api('https://www.googleapis.com/drive/v3/files', {
-      method: 'POST',
-      body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.spreadsheet', parents: [folderId] }),
-    });
-    id = f.id;
-    await api(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values/A1?valueInputOption=RAW`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        values: [['Faktura nr', 'Dato', 'Forfald', 'Kunde', 'Ydelse', 'Beløb', 'Moms', 'Betalt']],
-      }),
-    });
-  }
+  if (res.files.length === 0) throw new Error(`Kunne ikke finde dokumentet "${name}" i dit Google Drev`);
+
+  const id = res.files[0].id;
   localStorage.setItem('g_sheet', id);
   return id;
 }
@@ -327,7 +314,7 @@ async function buildDoc(folderId, { nr, date, due, amount, service, custName, cu
 // ── Main: create invoice ───────────────────────────────────────────────────
 export async function createInvoice({ appointment, customer }) {
   const folderId = await getFolder();
-  const sheetId  = await getSheet(folderId);
+  const sheetId  = await getSheet();
 
   const nr        = nextNr();
   const date      = new Date();
@@ -345,7 +332,7 @@ export async function createInvoice({ appointment, customer }) {
 
   // ── Google Sheet row ───────────────────────────────────────────────────
   await api(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:H:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/bilag!A:H:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
       body: JSON.stringify({
