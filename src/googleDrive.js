@@ -340,7 +340,7 @@ export async function createInvoice({ appointment, customer }) {
 
   // ── Google Sheet row ───────────────────────────────────────────────────
   await api(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetTab + '!A1')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetTab)}!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
       body: JSON.stringify({
