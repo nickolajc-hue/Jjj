@@ -99,17 +99,25 @@ async function getFolder() {
 
 async function getSheet() {
   const cached = localStorage.getItem('g_sheet');
-  if (cached) return cached;
+  if (cached) return JSON.parse(cached);
 
   const name = 'GronRude_Regnskab_2025';
   const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`);
-  const res = await api(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`);
+  const res = await api(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`);
 
   if (res.files.length === 0) throw new Error(`Kunne ikke finde dokumentet "${name}" i dit Google Drev`);
 
   const id = res.files[0].id;
-  localStorage.setItem('g_sheet', id);
-  return id;
+
+  // Hent faneliste og find 'bilag'-fanen (case-insensitive)
+  const meta = await api(`https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=sheets.properties(title)`);
+  const sheets = meta.sheets.map(s => s.properties.title);
+  const tabTitle = sheets.find(t => t.toLowerCase() === 'bilag');
+  if (!tabTitle) throw new Error(`Fandt ingen fane der hedder "Bilag" i ${name}. Faner: ${sheets.join(', ')}`);
+
+  const result = { id, tab: tabTitle };
+  localStorage.setItem('g_sheet', JSON.stringify(result));
+  return result;
 }
 
 // ── Invoice number ─────────────────────────────────────────────────────────
@@ -314,7 +322,7 @@ async function buildDoc(folderId, { nr, date, due, amount, service, custName, cu
 // ── Main: create invoice ───────────────────────────────────────────────────
 export async function createInvoice({ appointment, customer }) {
   const folderId = await getFolder();
-  const sheetId  = await getSheet();
+  const { id: sheetId, tab: sheetTab } = await getSheet();
 
   const nr        = nextNr();
   const date      = new Date();
@@ -332,7 +340,7 @@ export async function createInvoice({ appointment, customer }) {
 
   // ── Google Sheet row ───────────────────────────────────────────────────
   await api(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Bilag:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetTab)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
       body: JSON.stringify({
