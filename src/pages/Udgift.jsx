@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { getExpenses, saveExpenses, newId } from '../storage.js';
-import { writeExpense, isConnected } from '../googleDrive.js';
+import { writeExpense } from '../googleDrive.js';
 
 const KATEGORIER = ['Brændstof', 'Arbejdstøj', 'Værktøj', 'Kontorartikler', 'Telefon/Internet', 'Forsikring', 'Andet'];
 const STATS_TAKST = 3.81;
@@ -20,6 +20,7 @@ export default function Udgift() {
   const [category, setCategory] = useState('Andet');
   const [amount, setAmount] = useState('');
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoFile, setPhotoFile] = useState(null);
   const galleryRef = useRef(null);
   const [fra, setFra] = useState('');
   const [til, setTil] = useState('');
@@ -39,6 +40,7 @@ export default function Udgift() {
   const handlePhoto = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setPhotoFile(file);
     const reader = new FileReader();
     reader.onload = ev => setPhotoPreview(ev.target.result);
     reader.readAsDataURL(file);
@@ -65,16 +67,18 @@ export default function Udgift() {
     saveExpenses(updated);
     setExpenses(updated.sort((a, b) => b.date.localeCompare(a.date)));
 
-    let sheetOk = false;
-    if (isConnected()) {
-      try { await writeExpense(expense); sheetOk = true; }
-      catch (err) { console.warn('Sheets:', err.message); }
+    let sheetErr = null;
+    try {
+      await writeExpense(expense, photoFile);
+    } catch (err) {
+      sheetErr = err.message;
     }
 
-    setDesc(''); setAmount(''); setFra(''); setTil(''); setKm(''); setPhotoPreview(null);
+    setDesc(''); setAmount(''); setFra(''); setTil(''); setKm('');
+    setPhotoPreview(null); setPhotoFile(null);
     setSaving(false);
-    setSavedMsg(sheetOk ? '✅ Gemt og sendt til regnskab' : '✅ Gemt lokalt');
-    setTimeout(() => setSavedMsg(null), 2500);
+    setSavedMsg(sheetErr ? `⚠️ ${sheetErr}` : '✅ Gemt og sendt til regnskab');
+    setTimeout(() => setSavedMsg(null), 4000);
   };
 
   const handleDelete = (id) => {
@@ -173,7 +177,7 @@ export default function Udgift() {
                 {photoPreview && (
                   <div style={{ position: 'relative', marginTop: 8 }}>
                     <img src={photoPreview} alt="" style={{ width: '100%', borderRadius: 10, maxHeight: 220, objectFit: 'cover' }} />
-                    <button onClick={() => setPhotoPreview(null)} style={{
+                    <button onClick={() => { setPhotoPreview(null); setPhotoFile(null); }} style={{
                       position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.5)',
                       color: '#fff', borderRadius: '50%', width: 28, height: 28, fontSize: 18, lineHeight: '28px', textAlign: 'center',
                     }}>×</button>

@@ -132,8 +132,12 @@ function nextNr() {
 function fmtDate(d) {
   return d.toLocaleDateString('da-DK', { day: 'numeric', month: 'long', year: 'numeric' });
 }
-function isoDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function sheetsDate(d) {
+  return `=DATE(${d.getFullYear()},${d.getMonth() + 1},${d.getDate()})`;
+}
+function sheetsDateFromStr(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return `=DATE(${y},${m},${d})`;
 }
 function fmtKr(n) {
   return n.toLocaleString('da-DK') + ' kr';
@@ -322,13 +326,60 @@ async function buildDoc(folderId, { nr, date, due, amount, service, custName, cu
   return { docUrl: `https://docs.google.com/document/d/${docId}/edit`, docId };
 }
 
+// ── Bilag 2026 folder for receipt photos ──────────────────────────────────
+async function getBilagFolder() {
+  const cached = localStorage.getItem('g_bilag_folder');
+  if (cached) return cached;
+  const name = 'Bilag 2026';
+  const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const res = await api(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`);
+  let id;
+  if (res.files.length > 0) {
+    id = res.files[0].id;
+  } else {
+    const f = await api('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder' }),
+    });
+    id = f.id;
+  }
+  localStorage.setItem('g_bilag_folder', id);
+  return id;
+}
+
+async function uploadPhoto(file, expenseDate, expenseDesc) {
+  const folderId = await getBilagFolder();
+  const token = await signIn();
+  const ext = (file.name || 'jpg').split('.').pop();
+  const safeName = expenseDesc.replace(/[^a-zA-Z0-9æøåÆØÅ]/g, '_').slice(0, 40);
+  const metadata = JSON.stringify({ name: `Kvittering_${expenseDate}_${safeName}.${ext}`, parents: [folderId] });
+  const form = new FormData();
+  form.append('metadata', new Blob([metadata], { type: 'application/json' }));
+  form.append('file', file);
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Drive upload ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  await shareDoc(data.id);
+  return data.webViewLink;
+}
+
 // ── Write expense to Udgifter sheet ───────────────────────────────────────
-export async function writeExpense(expense) {
+export async function writeExpense(expense, photoFile) {
   const { id: sheetId } = await getSheet();
   const meta = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties(title)`);
   const tabs = meta.sheets.map(s => s.properties.title);
   const udTab = tabs.find(t => t.toLowerCase().includes('udgift'));
   if (!udTab) throw new Error(`Ingen fane med "udgift" — faner: ${tabs.join(', ')}`);
+
+  let photoUrl = '';
+  if (photoFile) {
+    try { photoUrl = await uploadPhoto(photoFile, expense.date, expense.description); }
+    catch (e) { console.warn('Foto upload fejl:', e.message); }
+  }
 
   const tab = encodeURIComponent(udTab);
   const check = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B3:B200`);
@@ -336,12 +387,12 @@ export async function writeExpense(expense) {
   const row = 3 + filled.length;
 
   await api(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${row}:I${row}?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${row}:J${row}?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       body: JSON.stringify({
         values: [[
-          expense.date,
+          sheetsDateFromStr(expense.date),
           expense.description,
           expense.category,
           expense.amount,
@@ -349,6 +400,7 @@ export async function writeExpense(expense) {
           expense.type === 'kørsel' ? `${expense.fra || ''}→${expense.til || ''}` : '',
           expense.km || '',
           expense.rate || '',
+          photoUrl,
         ]],
       }),
     }
@@ -381,7 +433,7 @@ async function setupOversigt(sheetId, bilagTabName) {
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${ovEncoded}!B5:M8?valueInputOption=USER_ENTERED`,
     { method: 'PUT', body: JSON.stringify({ values: [row5, row6, row7, row8] }) }
   );
-  localStorage.setItem('g_oversigt_done', '1');
+  localStorage.setItem('g_oversigt_v2', '1');
 }
 
 // ── Main: create invoice ───────────────────────────────────────────────────
@@ -414,13 +466,13 @@ export async function createInvoice({ appointment, customer }) {
     {
       method: 'PUT',
       body: JSON.stringify({
-        values: [[isoDate(date), custName, service, service, amount, 'Momsfritaget', amount, nr]],
+        values: [[sheetsDate(date), custName, service, service, amount, 'Momsfritaget', amount, nr]],
       }),
     }
   );
 
   // ── Oversigt formulas (write once) ────────────────────────────────────
-  if (!localStorage.getItem('g_oversigt_done')) {
+  if (!localStorage.getItem('g_oversigt_v2')) {
     setupOversigt(sheetId, sheetTab).catch(() => {});
   }
 
