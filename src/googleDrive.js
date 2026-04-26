@@ -149,16 +149,20 @@ async function shareDoc(fileId) {
   });
 }
 
+function mimeEncode(str) {
+  return `=?UTF-8?B?${btoa(unescape(encodeURIComponent(str)))}?=`;
+}
+
 // ── Send invoice email via Gmail API ───────────────────────────────────────
 async function sendInvoiceEmail({ to, custName, nr, service, amount, due, docUrl }) {
-  const subject = `Faktura ${nr} fra ${FIRMA.navn}`;
+  const subject = mimeEncode(`Faktura ${nr} fra ${FIRMA.navn}`);
   const body = [
     `Kære ${custName},`,
     '',
     `Tak for dit besøg! Herunder finder du faktura ${nr} for ${service}.`,
     '',
     `Faktura nr.:     ${nr}`,
-    `Beløb:           ${fmtKr(amount)} inkl. moms`,
+    `Beløb:           ${fmtKr(amount)} (momsfritaget)`,
     `Forfaldsdato:    ${fmtDate(due)}`,
     '',
     'Beløbet bedes indbetalt til:',
@@ -174,7 +178,7 @@ async function sendInvoiceEmail({ to, custName, nr, service, amount, due, docUrl
   ].join('\n');
 
   const mime = [
-    `From: ${FIRMA.navn} <${FIRMA.email}>`,
+    `From: ${mimeEncode(FIRMA.navn)} <${FIRMA.email}>`,
     `To: ${to}`,
     `Subject: ${subject}`,
     'MIME-Version: 1.0',
