@@ -338,13 +338,18 @@ export async function createInvoice({ appointment, customer }) {
 
   await shareDoc(docId);
 
-  // ── Google Sheet row ───────────────────────────────────────────────────
+  // ── Google Sheet row — find første tomme datarække ────────────────────
+  const tab = encodeURIComponent(sheetTab);
+  const colCheck = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B3:B200`);
+  const filled = (colCheck.values || []).filter(r => r && r[0]);
+  const writeRow = 3 + filled.length;
+  // Kolonner B-I: Dato, Kunde, Beskrivelse, Ydelse, Beløb ekskl. moms, Moms 25%, Beløb inkl. moms, Faktura nr.
   await api(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetTab)}!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${writeRow}:I${writeRow}?valueInputOption=USER_ENTERED`,
     {
-      method: 'POST',
+      method: 'PUT',
       body: JSON.stringify({
-        values: [[nr, fmtDate(date), fmtDate(due), custName, service, amount, 'Momsfritaget', 'Nej']],
+        values: [[fmtDate(date), custName, service, service, amount, 'Momsfritaget', amount, nr]],
       }),
     }
   );
