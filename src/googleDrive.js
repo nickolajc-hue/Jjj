@@ -132,6 +132,9 @@ function nextNr() {
 function fmtDate(d) {
   return d.toLocaleDateString('da-DK', { day: 'numeric', month: 'long', year: 'numeric' });
 }
+function isoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function fmtKr(n) {
   return n.toLocaleString('da-DK') + ' kr';
 }
@@ -352,6 +355,35 @@ export async function writeExpense(expense) {
   );
 }
 
+// ── Write SUMPRODUCT formulas to Oversigt tab ─────────────────────────────
+async function setupOversigt(sheetId, bilagTabName) {
+  const meta = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties(title)`);
+  const tabs = meta.sheets.map(s => s.properties.title);
+  const oversigtTab = tabs.find(t => t.toLowerCase() === 'oversigt');
+  if (!oversigtTab) return;
+  const udTab = tabs.find(t => t.toLowerCase().includes('udgift'));
+
+  const cols = 'BCDEFGHIJKLM'.split('');
+  const row5 = [], row6 = [], row7 = [], row8 = [];
+
+  for (let m = 1; m <= 12; m++) {
+    const col = cols[m - 1];
+    row5.push(`=SUMPRODUCT((${bilagTabName}!$B$3:$B$200<>"")*(MONTH(${bilagTabName}!$B$3:$B$200)=${m})*(YEAR(${bilagTabName}!$B$3:$B$200)=YEAR(TODAY()))*${bilagTabName}!$F$3:$F$200)`);
+    row6.push(udTab
+      ? `=SUMPRODUCT((${udTab}!$B$3:$B$200<>"")*(MONTH(${udTab}!$B$3:$B$200)=${m})*(YEAR(${udTab}!$B$3:$B$200)=YEAR(TODAY()))*${udTab}!$E$3:$E$200)`
+      : '0');
+    row7.push(`=${col}5-${col}6`);
+    row8.push('0');
+  }
+
+  const ovEncoded = encodeURIComponent(oversigtTab);
+  await api(
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${ovEncoded}!B5:M8?valueInputOption=USER_ENTERED`,
+    { method: 'PUT', body: JSON.stringify({ values: [row5, row6, row7, row8] }) }
+  );
+  localStorage.setItem('g_oversigt_done', '1');
+}
+
 // ── Main: create invoice ───────────────────────────────────────────────────
 export async function createInvoice({ appointment, customer }) {
   const folderId = await getFolder();
@@ -382,10 +414,15 @@ export async function createInvoice({ appointment, customer }) {
     {
       method: 'PUT',
       body: JSON.stringify({
-        values: [[fmtDate(date), custName, service, service, amount, 'Momsfritaget', amount, nr]],
+        values: [[isoDate(date), custName, service, service, amount, 'Momsfritaget', amount, nr]],
       }),
     }
   );
+
+  // ── Oversigt formulas (write once) ────────────────────────────────────
+  if (!localStorage.getItem('g_oversigt_done')) {
+    setupOversigt(sheetId, sheetTab).catch(() => {});
+  }
 
   // ── Send email via Gmail ───────────────────────────────────────────────
   let emailSent = false;
