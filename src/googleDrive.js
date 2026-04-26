@@ -5,7 +5,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/gmail.send',
 ].join(' ');
-const SCOPE_VER = 'v3'; // bump when scopes change to force re-auth
+const SCOPE_VER = 'v4'; // bump when scopes change to force re-auth
 
 export const FIRMA = {
   navn:            'GrønRude',
@@ -332,7 +332,7 @@ export async function createInvoice({ appointment, customer }) {
 
   // ── Google Sheet row ───────────────────────────────────────────────────
   await api(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent('Bilag!A:H')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Bilag:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
       body: JSON.stringify({
