@@ -117,7 +117,7 @@ async function getSheet(folderId) {
     await api(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values/A1?valueInputOption=RAW`, {
       method: 'PUT',
       body: JSON.stringify({
-        values: [['Faktura nr', 'Dato', 'Forfald', 'Kunde', 'Ydelse', 'Ekskl. moms', 'Moms 25%', 'Inkl. moms', 'Betalt']],
+        values: [['Faktura nr', 'Dato', 'Forfald', 'Kunde', 'Ydelse', 'Beløb', 'Moms', 'Betalt']],
       }),
     });
   }
@@ -195,7 +195,7 @@ async function sendInvoiceEmail({ to, custName, nr, service, amount, due, docUrl
 }
 
 // ── Build formatted Google Doc ─────────────────────────────────────────────
-async function buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, service, custName, custAddr, custPhone }) {
+async function buildDoc(folderId, { nr, date, due, amount, service, custName, custAddr, custPhone }) {
   const GRAY = { red: 0.55, green: 0.55, blue: 0.55 };
   const BLUE = { red: 0.15, green: 0.37, blue: 0.92 };
   const LINE = '─'.repeat(54);
@@ -240,8 +240,7 @@ async function buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, servi
   seg(`${pad(service, fmtKr(amount))}\n`,                               { size: 11 });
   seg(`${LINE}\n`,                                                      { color: GRAY });
   seg('\n');
-  seg(`${pad('Subtotal ekskl. moms:', fmtKr(exclMoms))}\n`,            { size: 11 });
-  seg(`${pad('Moms 25%:', fmtKr(moms))}\n`,                            { size: 11 });
+  seg(`${pad('Momsfritaget (CVR: ' + FIRMA.cvr + ')', '')}\n`,          { size: 10, color: GRAY });
   seg(`${LINE}\n`,                                                      { color: GRAY });
   seg(`${pad('TOTAL DKK:', fmtKr(amount))}\n`,                         { bold: true, size: 13 });
   seg(`${LINE}\n`,                                                      { color: GRAY });
@@ -330,25 +329,23 @@ export async function createInvoice({ appointment, customer }) {
   const date      = new Date();
   const due       = new Date(date); due.setDate(due.getDate() + FIRMA.betalingsfrist);
   const amount    = appointment.price || 0;
-  const exclMoms  = Math.round(amount / 1.25);
-  const moms      = amount - exclMoms;
   const service   = appointment.title || 'Haveservice';
   const custName  = customer?.name    || '';
   const custAddr  = customer?.address || '';
   const custPhone = customer?.phone   || '';
 
   // ── Formatted Google Doc ───────────────────────────────────────────────
-  const { docUrl, docId } = await buildDoc(folderId, { nr, date, due, amount, exclMoms, moms, service, custName, custAddr, custPhone });
+  const { docUrl, docId } = await buildDoc(folderId, { nr, date, due, amount, service, custName, custAddr, custPhone });
 
   await shareDoc(docId);
 
   // ── Google Sheet row ───────────────────────────────────────────────────
   await api(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:I:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:H:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
       body: JSON.stringify({
-        values: [[nr, fmtDate(date), fmtDate(due), custName, service, exclMoms, moms, amount, 'Nej']],
+        values: [[nr, fmtDate(date), fmtDate(due), custName, service, amount, 'Momsfritaget', 'Nej']],
       }),
     }
   );
