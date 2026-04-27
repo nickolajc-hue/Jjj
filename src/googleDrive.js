@@ -522,19 +522,21 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
     }
   );
 
-  // ── Apply d/m date format to Bilag column B ───────────────────────────
-  await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`, {
-    method: 'POST',
-    body: JSON.stringify({
-      requests: [{
-        repeatCell: {
-          range: { sheetId: tabId, startRowIndex: 2, startColumnIndex: 1, endColumnIndex: 2 },
-          cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'd/m' } } },
-          fields: 'userEnteredFormat.numberFormat',
-        },
-      }],
-    }),
-  });
+  // ── Apply d/m date format to Bilag column B (non-critical) ──────────────
+  if (tabId != null) {
+    api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        requests: [{
+          repeatCell: {
+            range: { sheetId: tabId, startRowIndex: 2, startColumnIndex: 1, endColumnIndex: 2 },
+            cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'd/m' } } },
+            fields: 'userEnteredFormat.numberFormat',
+          },
+        }],
+      }),
+    }).catch(() => {});
+  }
 
   // ── Oversigt formulas (write once) ────────────────────────────────────
   if (!localStorage.getItem('g_oversigt_v3')) {
