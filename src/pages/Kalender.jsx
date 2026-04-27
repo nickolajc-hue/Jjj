@@ -60,6 +60,7 @@ export default function Kalender() {
   const [multiOff,  setMultiOff]  = useState(false);
   const [pendingOff, setPendingOff] = useState(new Set());
   const [invoicingId, setInvoicingId] = useState(null);
+  const [invoicingMode, setInvoicingMode] = useState(null);
   const [invoiceResults, setInvoiceResults] = useState(() => JSON.parse(localStorage.getItem('inv_results') || '{}'));
 
   useEffect(() => {
@@ -178,16 +179,18 @@ export default function Kalender() {
     setInvoiceResults(next);
   };
 
-  const handleFaktura = async (appt, cust, e) => {
+  const handleFaktura = async (appt, cust, sendEmail, e) => {
     e.stopPropagation();
     setInvoicingId(appt.id);
+    setInvoicingMode(sendEmail ? 'send' : 'create');
     try {
-      const result = await createInvoice({ appointment: appt, customer: cust });
+      const result = await createInvoice({ appointment: appt, customer: cust, sendEmail });
       saveInvResult(appt.id, result);
     } catch (err) {
       alert(`Fejl ved oprettelse af faktura: ${err.message}`);
     } finally {
       setInvoicingId(null);
+      setInvoicingMode(null);
     }
   };
 
@@ -658,13 +661,23 @@ export default function Kalender() {
                             {invoiceResults[a.id].emailSent && <div style={{ color: '#065F46', marginTop: 4 }}>📧 Sendt til {cust?.email}</div>}
                           </div>
                         ) : (
-                          <button
-                            onClick={e => handleFaktura(a, cust, e)}
-                            disabled={invoicingId === a.id}
-                            style={{ marginTop: 8, background: '#F0FDF4', color: '#059669', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, border: '1.5px solid #86EFAC', opacity: invoicingId === a.id ? 0.6 : 1 }}
-                          >
-                            {invoicingId === a.id ? '⏳ Opretter faktura...' : '🧾 Opret faktura'}
-                          </button>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                            <button
+                              onClick={e => handleFaktura(a, cust, false, e)}
+                              disabled={!!invoicingId}
+                              style={{ flex: 1, background: '#F0FDF4', color: '#059669', borderRadius: 8, padding: '7px 0', fontSize: 12, fontWeight: 700, border: '1.5px solid #86EFAC', opacity: invoicingId === a.id && invoicingMode === 'create' ? 0.5 : 1 }}
+                            >
+                              {invoicingId === a.id && invoicingMode === 'create' ? '⏳...' : '🧾 Bare opret'}
+                            </button>
+                            <button
+                              onClick={e => handleFaktura(a, cust, true, e)}
+                              disabled={!!invoicingId || !cust?.email}
+                              title={!cust?.email ? 'Kunden har ingen email' : ''}
+                              style={{ flex: 1, background: cust?.email ? '#059669' : '#E5E7EB', color: cust?.email ? '#fff' : '#9CA3AF', borderRadius: 8, padding: '7px 0', fontSize: 12, fontWeight: 700, opacity: invoicingId === a.id && invoicingMode === 'send' ? 0.5 : 1 }}
+                            >
+                              {invoicingId === a.id && invoicingMode === 'send' ? '⏳ Sender...' : '📧 Opret og send'}
+                            </button>
+                          </div>
                         )}
                       </div>
                     );

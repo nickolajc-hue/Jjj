@@ -489,7 +489,7 @@ export async function fetchRegnskab() {
 }
 
 // ── Main: create invoice ───────────────────────────────────────────────────
-export async function createInvoice({ appointment, customer }) {
+export async function createInvoice({ appointment, customer, sendEmail = true }) {
   const folderId = await getFolder();
   const { id: sheetId, tab: sheetTab } = await getSheet();
 
@@ -530,7 +530,7 @@ export async function createInvoice({ appointment, customer }) {
 
   // ── Send email via Gmail ───────────────────────────────────────────────
   let emailSent = false;
-  if (customer?.email) {
+  if (sendEmail && customer?.email) {
     await sendInvoiceEmail({ to: customer.email, custName, nr, service, amount, due, docUrl });
     emailSent = true;
   }
