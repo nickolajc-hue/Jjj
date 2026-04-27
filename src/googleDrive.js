@@ -515,11 +515,14 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
   // Scan all data columns B–I; write after the last row that has ANY content
   const colCheck = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B3:I200`);
   const rows = colCheck.values || [];
-  let lastDataIdx = -1;
-  rows.forEach((row, i) => {
-    if (row?.some(cell => cell !== undefined && cell !== null && cell !== '')) lastDataIdx = i;
-  });
-  const writeRow = 3 + lastDataIdx + 1;
+  let writeOffset = rows.length; // default: after all returned rows
+  for (let i = 0; i < rows.length; i++) {
+    if (!rows[i]?.some(c => c !== undefined && c !== null && c !== '')) {
+      writeOffset = i; // first empty row
+      break;
+    }
+  }
+  const writeRow = 3 + writeOffset;
   await api(
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${writeRow}:I${writeRow}?valueInputOption=USER_ENTERED`,
     {
