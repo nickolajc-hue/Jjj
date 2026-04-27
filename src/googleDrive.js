@@ -508,9 +508,9 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
 
   // ── Google Sheet row — find første tomme datarække ────────────────────
   const tab = encodeURIComponent(sheetTab);
-  // Use column C (Kunde — plain text) to count filled rows reliably
-  const colCheck = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!C3:C200`);
-  const filled = (colCheck.values || []).filter(r => r?.[0] !== undefined && r?.[0] !== '');
+  // Use column I (Faktura nr.) — always a non-empty string, never blank
+  const colCheck = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!I3:I200`);
+  const filled = (colCheck.values || []).filter(r => r?.[0]);
   const writeRow = 3 + filled.length;
   await api(
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${writeRow}:I${writeRow}?valueInputOption=USER_ENTERED`,
@@ -530,7 +530,7 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
         requests: [{
           repeatCell: {
             range: { sheetId: tabId, startRowIndex: 2, startColumnIndex: 1, endColumnIndex: 2 },
-            cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'd/m' } } },
+            cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'd"/"m"-"yyyy' } } },
             fields: 'userEnteredFormat.numberFormat',
           },
         }],
