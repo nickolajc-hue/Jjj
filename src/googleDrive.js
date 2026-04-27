@@ -5,7 +5,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/gmail.send',
 ].join(' ');
-const SCOPE_VER = 'v4'; // bump when scopes change to force re-auth
+const SCOPE_VER = 'v5'; // bump when scopes change to force re-auth
 
 export const FIRMA = {
   navn:            'GrønRude',
@@ -109,13 +109,12 @@ async function getSheet() {
 
   const id = res.files[0].id;
 
-  // Hent faneliste og find 'bilag'-fanen (case-insensitive)
-  const meta = await api(`https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=sheets.properties(title)`);
-  const sheets = meta.sheets.map(s => s.properties.title);
-  const tabTitle = sheets.find(t => t.toLowerCase() === 'bilag');
-  if (!tabTitle) throw new Error(`Fandt ingen fane der hedder "Bilag" i ${name}. Faner: ${sheets.join(', ')}`);
+  const meta = await api(`https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=sheets.properties(title,sheetId)`);
+  const sheets = meta.sheets.map(s => s.properties);
+  const found = sheets.find(s => s.title.toLowerCase() === 'bilag');
+  if (!found) throw new Error(`Fandt ingen fane der hedder "Bilag" i ${name}. Faner: ${sheets.map(s=>s.title).join(', ')}`);
 
-  const result = { id, tab: tabTitle };
+  const result = { id, tab: found.title, tabId: found.sheetId };
   localStorage.setItem('g_sheet', JSON.stringify(result));
   return result;
 }
@@ -491,7 +490,7 @@ export async function fetchRegnskab() {
 // ── Main: create invoice ───────────────────────────────────────────────────
 export async function createInvoice({ appointment, customer, sendEmail = true }) {
   const folderId = await getFolder();
-  const { id: sheetId, tab: sheetTab } = await getSheet();
+  const { id: sheetId, tab: sheetTab, tabId } = await getSheet();
 
   const nr        = nextNr();
   const date      = new Date();
@@ -509,10 +508,10 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
 
   // ── Google Sheet row — find første tomme datarække ────────────────────
   const tab = encodeURIComponent(sheetTab);
-  const colCheck = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B3:B200`);
-  const filled = (colCheck.values || []).filter(r => r && r[0]);
+  // Use column C (Kunde — plain text) to count filled rows reliably
+  const colCheck = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!C3:C200`);
+  const filled = (colCheck.values || []).filter(r => r?.[0] !== undefined && r?.[0] !== '');
   const writeRow = 3 + filled.length;
-  // Kolonner B-I: Dato, Kunde, Beskrivelse, Ydelse, Beløb ekskl. moms, Moms 25%, Beløb inkl. moms, Faktura nr.
   await api(
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${writeRow}:I${writeRow}?valueInputOption=USER_ENTERED`,
     {
@@ -522,6 +521,20 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
       }),
     }
   );
+
+  // ── Apply d/m date format to Bilag column B ───────────────────────────
+  await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`, {
+    method: 'POST',
+    body: JSON.stringify({
+      requests: [{
+        repeatCell: {
+          range: { sheetId: tabId, startRowIndex: 2, startColumnIndex: 1, endColumnIndex: 2 },
+          cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'd/m' } } },
+          fields: 'userEnteredFormat.numberFormat',
+        },
+      }],
+    }),
+  });
 
   // ── Oversigt formulas (write once) ────────────────────────────────────
   if (!localStorage.getItem('g_oversigt_v3')) {
