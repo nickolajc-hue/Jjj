@@ -497,7 +497,7 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
   const { id: sheetId, tab: sheetTab, tabId } = await getSheet();
 
   const nr        = nextNr();
-  const date      = new Date();
+  const date      = appointment.date ? new Date(appointment.date + 'T12:00:00') : new Date();
   const due       = new Date(date); due.setDate(due.getDate() + FIRMA.betalingsfrist);
   const amount    = appointment.price || 0;
   const service   = appointment.title || 'Haveservice';

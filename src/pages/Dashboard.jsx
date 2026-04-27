@@ -282,6 +282,16 @@ export default function Dashboard() {
             <span style={{ fontSize: 24 }}>📆</span>
             <span style={s.actionLabel}>Ny aftale</span>
           </button>
+          <button style={s.actionBtn} onClick={() => {
+            const year = new Date().getFullYear();
+            const cur = parseInt(localStorage.getItem(`inv_seq_${year}`) || '0');
+            if (window.confirm(`Nulstil fakturanummer?\nNæste faktura bliver ${year}-001\n(Nuværende: ${year}-${String(cur).padStart(3,'0')})`)) {
+              localStorage.setItem(`inv_seq_${year}`, '0');
+            }
+          }}>
+            <span style={{ fontSize: 24 }}>🔢</span>
+            <span style={s.actionLabel}>Nulstil nr.</span>
+          </button>
         </div>
       </div>
     </div>
