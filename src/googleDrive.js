@@ -131,12 +131,16 @@ function nextNr() {
 function fmtDate(d) {
   return d.toLocaleDateString('da-DK', { day: 'numeric', month: 'long', year: 'numeric' });
 }
+// Serial number avoids locale issues (Danish Sheets uses ; not , in formulas)
+function sheetsSerial(y, m, d) {
+  return Math.round(Date.UTC(y, m - 1, d) / 86400000) + 25569;
+}
 function sheetsDate(d) {
-  return `=DATE(${d.getFullYear()},${d.getMonth() + 1},${d.getDate()})`;
+  return sheetsSerial(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 function sheetsDateFromStr(s) {
   const [y, m, d] = s.split('-').map(Number);
-  return `=DATE(${y},${m},${d})`;
+  return sheetsSerial(y, m, d);
 }
 function fmtKr(n) {
   return n.toLocaleString('da-DK') + ' kr';
@@ -508,10 +512,14 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
 
   // ── Google Sheet row — find første tomme datarække ────────────────────
   const tab = encodeURIComponent(sheetTab);
-  // Use column I (Faktura nr.) — always a non-empty string, never blank
-  const colCheck = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!I3:I200`);
-  const filled = (colCheck.values || []).filter(r => r?.[0]);
-  const writeRow = 3 + filled.length;
+  // Scan all data columns B–I; write after the last row that has ANY content
+  const colCheck = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B3:I200`);
+  const rows = colCheck.values || [];
+  let lastDataIdx = -1;
+  rows.forEach((row, i) => {
+    if (row?.some(cell => cell !== undefined && cell !== null && cell !== '')) lastDataIdx = i;
+  });
+  const writeRow = 3 + lastDataIdx + 1;
   await api(
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${writeRow}:I${writeRow}?valueInputOption=USER_ENTERED`,
     {
