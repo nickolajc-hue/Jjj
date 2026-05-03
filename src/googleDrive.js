@@ -491,6 +491,44 @@ export async function fetchRegnskab() {
   };
 }
 
+// ── Mark an invoice as paid in the sheet ─────────────────────────────────
+export async function markInvoicePaid(nr) {
+  const { id: sheetId, tab: sheetTab } = await getSheet();
+  const tab = encodeURIComponent(sheetTab);
+  const res = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!I3:I200`);
+  const rows = res.values || [];
+  const rowIdx = rows.findIndex(r => r?.[0] === nr);
+  if (rowIdx === -1) throw new Error(`Faktura ${nr} ikke fundet i regnearket`);
+  const writeRow = 3 + rowIdx;
+  await api(
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!J${writeRow}?valueInputOption=USER_ENTERED`,
+    { method: 'PUT', body: JSON.stringify({ values: [[sheetsDate(new Date())]] }) }
+  );
+}
+
+// ── Fetch all invoices from the Bilag sheet ───────────────────────────────
+export async function fetchInvoices() {
+  const { id: sheetId, tab: sheetTab } = await getSheet();
+  const tab = encodeURIComponent(sheetTab);
+  const res = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B3:J200?valueRenderOption=UNFORMATTED_VALUE`);
+  function fromSerial(s) {
+    const n = Number(s);
+    if (!n || isNaN(n)) return null;
+    const d = new Date((n - 25569) * 86400 * 1000);
+    return `${d.getUTCDate()}/${d.getUTCMonth() + 1}-${d.getUTCFullYear()}`;
+  }
+  return (res.values || [])
+    .filter(r => r?.[7]) // must have invoice number in column I (index 7)
+    .map(r => ({
+      date:     fromSerial(r[0]),
+      kunde:    r[1] || '',
+      service:  r[2] || '',
+      beloeb:   Number(r[4]) || 0,
+      nr:       r[7] || '',
+      paidDate: r[8] ? fromSerial(r[8]) : null,
+    }));
+}
+
 // ── Send email for an already-created invoice ─────────────────────────────
 export async function sendInvoice({ customer, appointment, nr, docUrl }) {
   const amount   = appointment.price || 0;

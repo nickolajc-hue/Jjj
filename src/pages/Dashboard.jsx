@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCustomers, getAppointments, occursOnDate, calcExpectedIncome } from '../storage.js';
-import { fetchRegnskab, isConnected } from '../googleDrive.js';
+import { fetchRegnskab, fetchInvoices, markInvoicePaid, isConnected } from '../googleDrive.js';
 
 const s = {
   header: { background: '#2563EB', color: '#fff', padding: '24px 20px 48px', paddingTop: 'calc(24px + env(safe-area-inset-top))' },
@@ -135,6 +135,54 @@ function RegnskabCard({ data, loading, err, onRefresh }) {
   );
 }
 
+function UdestaaendeCard({ invoices, loading, err, onRefresh, onMarkPaid, markingNr }) {
+  const unpaid = (invoices || []).filter(inv => !inv.paidDate);
+  const total  = unpaid.reduce((s, inv) => s + inv.beloeb, 0);
+
+  return (
+    <div style={s.section}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={s.sectionTitle}>📋 Udestående fakturaer</div>
+        <button onClick={onRefresh} style={{ fontSize: 18, background: 'none', color: '#9CA3AF', padding: '0 2px' }} title="Opdater">↻</button>
+      </div>
+      {loading && <div style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', padding: '8px 0' }}>Henter...</div>}
+      {err    && <div style={{ color: '#EF4444', fontSize: 12, padding: '4px 0' }}>⚠️ {err}</div>}
+      {!loading && !err && !invoices && (
+        <div style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', padding: '8px 0' }}>Tryk ↻ for at hente fakturaer</div>
+      )}
+      {!loading && invoices && unpaid.length === 0 && (
+        <div style={{ color: '#10B981', fontSize: 13, textAlign: 'center', padding: '8px 0', fontWeight: 700 }}>✅ Alle fakturaer er betalt</div>
+      )}
+      {!loading && unpaid.length > 0 && (
+        <>
+          {unpaid.map(inv => (
+            <div key={inv.nr} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #F3F4F6', gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{inv.nr}</div>
+                <div style={{ fontSize: 12, color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.kunde} · {inv.date}</div>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#EF4444', whiteSpace: 'nowrap' }}>
+                {inv.beloeb.toLocaleString('da-DK')} kr
+              </div>
+              <button
+                onClick={() => onMarkPaid(inv.nr)}
+                disabled={markingNr === inv.nr}
+                style={{ background: '#F59E0B', color: '#fff', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', opacity: markingNr === inv.nr ? 0.6 : 1 }}
+              >
+                {markingNr === inv.nr ? '⏳' : '💰 Betalt'}
+              </button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, paddingTop: 8, borderTop: '2px solid #E5E7EB' }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Total udestående</span>
+            <span style={{ fontSize: 15, fontWeight: 900, color: '#EF4444' }}>{total.toLocaleString('da-DK')} kr</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [counts, setCounts] = useState({ customers: 0, upcoming: 0, today: 0 });
@@ -144,6 +192,10 @@ export default function Dashboard() {
   const [regnskab, setRegnskab] = useState(null);
   const [regnskabLoading, setRegnskabLoading] = useState(false);
   const [regnskabErr, setRegnskabErr] = useState(null);
+  const [invoices, setInvoices] = useState(null);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [invoicesErr, setInvoicesErr] = useState(null);
+  const [markingNr, setMarkingNr] = useState(null);
 
   const loadRegnskab = () => {
     if (!isConnected()) return;
@@ -155,8 +207,31 @@ export default function Dashboard() {
       .finally(() => setRegnskabLoading(false));
   };
 
+  const loadInvoices = () => {
+    if (!isConnected()) return;
+    setInvoicesLoading(true);
+    setInvoicesErr(null);
+    fetchInvoices()
+      .then(r => setInvoices(r))
+      .catch(e => setInvoicesErr(e.message))
+      .finally(() => setInvoicesLoading(false));
+  };
+
+  const handleMarkPaid = async (nr) => {
+    setMarkingNr(nr);
+    try {
+      await markInvoicePaid(nr);
+      setInvoices(prev => prev.map(inv => inv.nr === nr ? { ...inv, paidDate: 'i dag' } : inv));
+    } catch (err) {
+      alert(`Fejl: ${err.message}`);
+    } finally {
+      setMarkingNr(null);
+    }
+  };
+
   useEffect(() => {
     loadRegnskab();
+    loadInvoices();
     const customers = getCustomers();
     const appts = getAppointments();
     const customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
@@ -247,6 +322,18 @@ export default function Dashboard() {
       {/* Regnskab fra Google Sheet */}
       {isConnected() && (
         <RegnskabCard data={regnskab} loading={regnskabLoading} err={regnskabErr} onRefresh={loadRegnskab} />
+      )}
+
+      {/* Udestående fakturaer */}
+      {isConnected() && (
+        <UdestaaendeCard
+          invoices={invoices}
+          loading={invoicesLoading}
+          err={invoicesErr}
+          onRefresh={loadInvoices}
+          onMarkPaid={handleMarkPaid}
+          markingNr={markingNr}
+        />
       )}
 
       {/* Næste aftaler */}
