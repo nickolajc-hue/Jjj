@@ -491,6 +491,16 @@ export async function fetchRegnskab() {
   };
 }
 
+// ── Send email for an already-created invoice ─────────────────────────────
+export async function sendInvoice({ customer, appointment, nr, docUrl }) {
+  const amount   = appointment.price || 0;
+  const service  = appointment.title || 'Haveservice';
+  const custName = customer?.name    || '';
+  const date     = appointment.date ? new Date(appointment.date) : new Date();
+  const due      = new Date(date); due.setDate(due.getDate() + FIRMA.betalingsfrist);
+  await sendInvoiceEmail({ to: customer.email, custName, nr, service, amount, due, docUrl });
+}
+
 // ── Main: create invoice ───────────────────────────────────────────────────
 export async function createInvoice({ appointment, customer, sendEmail = true }) {
   const folderId = await getFolder();

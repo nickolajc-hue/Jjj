@@ -11,7 +11,7 @@ import {
 } from '../storage.js';
 import CalendarPicker from '../components/CalendarPicker.jsx';
 import { generateICS } from '../ics.js';
-import { createInvoice } from '../googleDrive.js';
+import { createInvoice, sendInvoice } from '../googleDrive.js';
 
 const MÅNEDER = ['Januar','Februar','Marts','April','Maj','Juni','Juli','August','September','Oktober','November','December'];
 const UGEDAGE = ['Ma','Ti','On','To','Fr','Lø','Sø'];
@@ -61,6 +61,7 @@ export default function Kalender() {
   const [pendingOff, setPendingOff] = useState(new Set());
   const [invoicingId, setInvoicingId] = useState(null);
   const [invoicingMode, setInvoicingMode] = useState(null);
+  const [sendingId, setSendingId] = useState(null);
   const [invoiceResults, setInvoiceResults] = useState(() => JSON.parse(localStorage.getItem('inv_results') || '{}'));
 
   useEffect(() => {
@@ -191,6 +192,21 @@ export default function Kalender() {
     } finally {
       setInvoicingId(null);
       setInvoicingMode(null);
+    }
+  };
+
+  const handleSendEmail = async (appt, cust, e) => {
+    e.stopPropagation();
+    const res = invoiceResults[appt.id];
+    if (!res) return;
+    setSendingId(appt.id);
+    try {
+      await sendInvoice({ customer: cust, appointment: appt, nr: res.nr, docUrl: res.docUrl });
+      saveInvResult(appt.id, { ...res, emailSent: true });
+    } catch (err) {
+      alert(`Fejl ved afsendelse: ${err.message}`);
+    } finally {
+      setSendingId(null);
     }
   };
 
@@ -658,7 +674,18 @@ export default function Kalender() {
                               <button onClick={e => deleteInvResult(a.id, e)}
                                 style={{ color: '#6B7280', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>×</button>
                             </div>
-                            {invoiceResults[a.id].emailSent && <div style={{ color: '#065F46', marginTop: 4 }}>📧 Sendt til {cust?.email}</div>}
+                            {invoiceResults[a.id].emailSent
+                              ? <div style={{ color: '#065F46', marginTop: 4 }}>📧 Sendt til {cust?.email}</div>
+                              : cust?.email && (
+                                <button
+                                  onClick={e => handleSendEmail(a, cust, e)}
+                                  disabled={sendingId === a.id}
+                                  style={{ marginTop: 6, background: '#059669', color: '#fff', borderRadius: 6, padding: '5px 10px', fontSize: 12, fontWeight: 700, opacity: sendingId === a.id ? 0.6 : 1 }}
+                                >
+                                  {sendingId === a.id ? '⏳ Sender...' : '📧 Send faktura'}
+                                </button>
+                              )
+                            }
                           </div>
                         ) : (
                           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
