@@ -365,6 +365,10 @@ export default function Dashboard() {
             <span style={{ fontSize: 24 }}>👤</span>
             <span style={s.actionLabel}>Ny kunde</span>
           </button>
+          <button style={s.actionBtn} onClick={() => navigate('/faktura/manuel')}>
+            <span style={{ fontSize: 24 }}>🧾</span>
+            <span style={s.actionLabel}>Faktura</span>
+          </button>
           <button style={s.actionBtn} onClick={() => navigate('/aftaler/ny')}>
             <span style={{ fontSize: 24 }}>📆</span>
             <span style={s.actionLabel}>Ny aftale</span>

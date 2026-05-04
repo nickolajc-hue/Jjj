@@ -204,7 +204,7 @@ async function sendInvoiceEmail({ to, custName, nr, service, amount, due, docUrl
 }
 
 // ── Build formatted Google Doc ─────────────────────────────────────────────
-async function buildDoc(folderId, { nr, date, due, amount, service, custName, custAddr, custPhone }) {
+async function buildDoc(folderId, { nr, date, due, amount, service, lines, custName, custAddr, custPhone }) {
   const GRAY = { red: 0.55, green: 0.55, blue: 0.55 };
   const BLUE = { red: 0.15, green: 0.37, blue: 0.92 };
   const LINE = '─'.repeat(54);
@@ -243,15 +243,20 @@ async function buildDoc(folderId, { nr, date, due, amount, service, custName, cu
   if (custAddr)  seg(`${custAddr}\n`,                                   { size: 11 });
   if (custPhone) seg(`${custPhone}\n`,                                  { size: 11 });
   seg('\n');
+  const lineArr = lines && lines.length > 0 ? lines : [{ desc: service, amount }];
+  const total   = lineArr.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+
   seg(`${LINE}\n`,                                                      { color: GRAY });
   seg(`${pad('Beskrivelse', 'Beløb')}\n`,                               { bold: true, size: 11 });
   seg(`${LINE}\n`,                                                      { color: GRAY });
-  seg(`${pad(service, fmtKr(amount))}\n`,                               { size: 11 });
+  for (const l of lineArr) {
+    seg(`${pad(l.desc, fmtKr(Number(l.amount) || 0))}\n`,              { size: 11 });
+  }
   seg(`${LINE}\n`,                                                      { color: GRAY });
   seg('\n');
   seg(`${pad('Momsfritaget (CVR: ' + FIRMA.cvr + ')', '')}\n`,          { size: 10, color: GRAY });
   seg(`${LINE}\n`,                                                      { color: GRAY });
-  seg(`${pad('TOTAL DKK:', fmtKr(amount))}\n`,                         { bold: true, size: 13 });
+  seg(`${pad('TOTAL DKK:', fmtKr(total))}\n`,                          { bold: true, size: 13 });
   seg(`${LINE}\n`,                                                      { color: GRAY });
   seg('\n');
   seg(`Betalingsbetingelser: Netto ${FIRMA.betalingsfrist} dage — Forfaldsdato: ${fmtDate(due)}\n`, { bold: true, size: 10 });
@@ -606,6 +611,60 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
   let emailSent = false;
   if (sendEmail && customer?.email) {
     await sendInvoiceEmail({ to: customer.email, custName, nr, service, amount, due, docUrl });
+    emailSent = true;
+  }
+
+  return { nr, docUrl, emailSent };
+}
+
+// ── Manuel faktura (multiple line items, no appointment) ─────────────────
+export async function createManualInvoice({ customer, date, lines, sendEmail = true }) {
+  const folderId = await getFolder();
+  const { id: sheetId, tab: sheetTab, tabId } = await getSheet();
+
+  const nr       = nextNr();
+  const d        = date instanceof Date ? date : new Date(date);
+  const due      = new Date(d); due.setDate(due.getDate() + FIRMA.betalingsfrist);
+  const total    = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+  const service  = lines.length === 1 ? lines[0].desc : `${lines.length} ydelser`;
+  const custName  = customer?.name    || '';
+  const custAddr  = customer?.address || '';
+  const custPhone = customer?.phone   || '';
+
+  const { docUrl, docId } = await buildDoc(folderId, {
+    nr, date: d, due, amount: total, service, lines, custName, custAddr, custPhone,
+  });
+  await shareDoc(docId);
+
+  const tab = encodeURIComponent(sheetTab);
+  const colCheck = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B3:I200`);
+  const rows = colCheck.values || [];
+  let writeOffset = rows.length;
+  for (let i = 0; i < rows.length; i++) {
+    if (!rows[i]?.some(c => c !== undefined && c !== null && c !== '')) { writeOffset = i; break; }
+  }
+  const writeRow = 3 + writeOffset;
+  await api(
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${writeRow}:I${writeRow}?valueInputOption=USER_ENTERED`,
+    { method: 'PUT', body: JSON.stringify({ values: [[sheetsDate(d), custName, service, service, total, 'Momsfritaget', total, nr]] }) }
+  );
+
+  if (tabId != null) {
+    api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({ requests: [{ repeatCell: {
+        range: { sheetId: tabId, startRowIndex: 2, startColumnIndex: 1, endColumnIndex: 2 },
+        cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'd"/"m"-"yyyy' } } },
+        fields: 'userEnteredFormat.numberFormat',
+      }}] }),
+    }).catch(() => {});
+  }
+
+  if (!localStorage.getItem('g_oversigt_v3')) setupOversigt(sheetId, sheetTab).catch(() => {});
+
+  let emailSent = false;
+  if (sendEmail && customer?.email) {
+    await sendInvoiceEmail({ to: customer.email, custName, nr, service, amount: total, due, docUrl });
     emailSent = true;
   }
 
