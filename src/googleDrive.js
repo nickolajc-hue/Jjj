@@ -522,16 +522,74 @@ export async function fetchInvoices() {
     const d = new Date((n - 25569) * 86400 * 1000);
     return `${d.getUTCDate()}/${d.getUTCMonth() + 1}-${d.getUTCFullYear()}`;
   }
+  function serialToISO(s) {
+    const n = Number(s);
+    if (!n || isNaN(n)) return null;
+    const d = new Date((n - 25569) * 86400 * 1000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  }
   return (res.values || [])
-    .filter(r => r?.[7]) // must have invoice number in column I (index 7)
-    .map(r => ({
-      date:     fromSerial(r[0]),
-      kunde:    r[1] || '',
-      service:  r[2] || '',
-      beloeb:   Number(r[4]) || 0,
-      nr:       r[7] || '',
-      paidDate: r[8] ? fromSerial(r[8]) : null,
-    }));
+    .filter(r => r?.[7])
+    .map(r => {
+      const serial = Number(r[0]);
+      const dueSerial = serial ? serial + FIRMA.betalingsfrist : null;
+      return {
+        date:     fromSerial(r[0]),
+        dueISO:   dueSerial ? serialToISO(dueSerial) : null,
+        kunde:    r[1] || '',
+        service:  r[2] || '',
+        beloeb:   Number(r[4]) || 0,
+        nr:       r[7] || '',
+        paidDate: r[8] ? fromSerial(r[8]) : null,
+      };
+    });
+}
+
+// ── Send reminder (rykker) email ──────────────────────────────────────────
+export async function sendReminder({ custName, custEmail, nr, amount, dueISO }) {
+  const subject = mimeEncode(`Rykker: Faktura ${nr} fra ${FIRMA.navn} - ubetalt`);
+  const due = new Date(dueISO + 'T00:00:00Z');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const daysLate = Math.max(0, Math.floor((today - due) / 86400000));
+  const body = [
+    `Kære ${custName},`,
+    '',
+    `Dette er en rykker vedrørende faktura ${nr}, som fortsat ikke er betalt.`,
+    '',
+    `Faktura nr.:  ${nr}`,
+    `Beløb:        ${fmtKr(amount)} (momsfritaget)`,
+    `Forfaldsdato: ${fmtDate(due)}`,
+    `Forsinket:    ${daysLate} dag${daysLate !== 1 ? 'e' : ''}`,
+    '',
+    'Beløbet bedes indbetalt hurtigst muligt:',
+    `Reg.nr. ${FIRMA.bankReg}  /  Kontonr. ${FIRMA.bankKonto}`,
+    `Husk at angive faktura nr. ${nr} ved bankoverførslen.`,
+    '',
+    'Hvis du allerede har betalt, bedes du se bort fra denne besked.',
+    '',
+    'Med venlig hilsen',
+    FIRMA.navn,
+    `Tlf: ${FIRMA.telefon}`,
+    FIRMA.email,
+  ].join('\n');
+
+  const mime = [
+    `From: ${mimeEncode(FIRMA.navn)} <${FIRMA.email}>`,
+    `To: ${custEmail}`,
+    `Subject: ${subject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: quoted-printable',
+    '',
+    body,
+  ].join('\r\n');
+
+  const raw = btoa(unescape(encodeURIComponent(mime)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  await api('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    body: JSON.stringify({ raw }),
+  });
 }
 
 // ── Send email for an already-created invoice ─────────────────────────────

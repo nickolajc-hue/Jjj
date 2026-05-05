@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCustomers, getAppointments, occursOnDate, calcExpectedIncome } from '../storage.js';
-import { fetchRegnskab, fetchInvoices, markInvoicePaid, isConnected } from '../googleDrive.js';
+import { fetchRegnskab, fetchInvoices, markInvoicePaid, sendReminder, signIn, isConnected } from '../googleDrive.js';
 
 const s = {
   header: { background: '#2563EB', color: '#fff', padding: '24px 20px 48px', paddingTop: 'calc(24px + env(safe-area-inset-top))' },
@@ -135,7 +135,19 @@ function RegnskabCard({ data, loading, err, onRefresh }) {
   );
 }
 
-function UdestaaendeCard({ invoices, loading, err, onRefresh, onMarkPaid, markingNr }) {
+function rykkerstatus(dueISO) {
+  if (!dueISO) return null;
+  const due = new Date(dueISO + 'T00:00:00Z');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.floor((today - due) / 86400000);
+  const dueFormatted = `${due.getUTCDate()}/${due.getUTCMonth()+1}-${due.getUTCFullYear()}`;
+  if (diff < -3)  return { color: '#10B981', text: `Forfalder ${dueFormatted}`,        overdue: false };
+  if (diff < 0)   return { color: '#F59E0B', text: `Forfalder om ${-diff} dag${-diff !== 1 ? 'e' : ''}`, overdue: false };
+  if (diff === 0) return { color: '#EF4444', text: 'Forfalder i dag!',                 overdue: true  };
+  return          { color: '#EF4444', text: `${diff} dag${diff !== 1 ? 'e' : ''} forsinket — send rykker`, overdue: true };
+}
+
+function UdestaaendeCard({ invoices, loading, err, onRefresh, onMarkPaid, markingNr, onSendReminder, sendingReminderNr }) {
   const unpaid = (invoices || []).filter(inv => !inv.paidDate);
   const total  = unpaid.reduce((s, inv) => s + inv.beloeb, 0);
 
@@ -155,24 +167,40 @@ function UdestaaendeCard({ invoices, loading, err, onRefresh, onMarkPaid, markin
       )}
       {!loading && unpaid.length > 0 && (
         <>
-          {unpaid.map(inv => (
-            <div key={inv.nr} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #F3F4F6', gap: 8 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{inv.nr}</div>
-                <div style={{ fontSize: 12, color: '#6B7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.kunde} · {inv.date}</div>
+          {unpaid.map(inv => {
+            const rs = rykkerstatus(inv.dueISO);
+            return (
+              <div key={inv.nr} style={{ padding: '10px 0', borderBottom: '1px solid #F3F4F6' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: rs?.overdue ? 6 : 0 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{inv.nr} · {inv.kunde}</div>
+                    <div style={{ fontSize: 12, color: '#6B7280' }}>{inv.date} · {inv.beloeb.toLocaleString('da-DK')} kr</div>
+                    {rs && (
+                      <div style={{ fontSize: 12, fontWeight: 700, color: rs.color, marginTop: 2 }}>
+                        {rs.overdue ? '⚠️' : '🕐'} {rs.text}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => onMarkPaid(inv.nr)}
+                    disabled={markingNr === inv.nr}
+                    style={{ background: '#F59E0B', color: '#fff', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', opacity: markingNr === inv.nr ? 0.6 : 1, flexShrink: 0 }}
+                  >
+                    {markingNr === inv.nr ? '⏳' : '💰 Betalt'}
+                  </button>
+                </div>
+                {rs?.overdue && (
+                  <button
+                    onClick={() => onSendReminder(inv)}
+                    disabled={sendingReminderNr === inv.nr}
+                    style={{ width: '100%', background: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D', borderRadius: 8, padding: '7px 0', fontSize: 12, fontWeight: 700, opacity: sendingReminderNr === inv.nr ? 0.6 : 1 }}
+                  >
+                    {sendingReminderNr === inv.nr ? '⏳ Sender rykker...' : '📨 Send rykker'}
+                  </button>
+                )}
               </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#EF4444', whiteSpace: 'nowrap' }}>
-                {inv.beloeb.toLocaleString('da-DK')} kr
-              </div>
-              <button
-                onClick={() => onMarkPaid(inv.nr)}
-                disabled={markingNr === inv.nr}
-                style={{ background: '#F59E0B', color: '#fff', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', opacity: markingNr === inv.nr ? 0.6 : 1 }}
-              >
-                {markingNr === inv.nr ? '⏳' : '💰 Betalt'}
-              </button>
-            </div>
-          ))}
+            );
+          })}
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, paddingTop: 8, borderTop: '2px solid #E5E7EB' }}>
             <span style={{ fontSize: 13, fontWeight: 700 }}>Total udestående</span>
             <span style={{ fontSize: 15, fontWeight: 900, color: '#EF4444' }}>{total.toLocaleString('da-DK')} kr</span>
@@ -196,6 +224,9 @@ export default function Dashboard() {
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesErr, setInvoicesErr] = useState(null);
   const [markingNr, setMarkingNr] = useState(null);
+  const [sendingReminderNr, setSendingReminderNr] = useState(null);
+  const [connected, setConnected] = useState(isConnected);
+  const [connecting, setConnecting] = useState(false);
 
   const loadRegnskab = () => {
     if (!isConnected()) return;
@@ -226,6 +257,39 @@ export default function Dashboard() {
       alert(`Fejl: ${err.message}`);
     } finally {
       setMarkingNr(null);
+    }
+  };
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    try {
+      await signIn();
+      setConnected(true);
+      loadRegnskab();
+      loadInvoices();
+    } catch (err) {
+      alert(`Kunne ikke forbinde: ${err.message}`);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleSendReminder = async (inv) => {
+    const custs = getCustomers();
+    const cust  = custs.find(c => c.name?.toLowerCase() === inv.kunde?.toLowerCase());
+    const email = cust?.email;
+    if (!email) {
+      alert(`Ingen email fundet på "${inv.kunde}". Åbn kunden og tilføj en email.`);
+      return;
+    }
+    setSendingReminderNr(inv.nr);
+    try {
+      await sendReminder({ custName: inv.kunde, custEmail: email, nr: inv.nr, amount: inv.beloeb, dueISO: inv.dueISO });
+      alert(`Rykker sendt til ${email}`);
+    } catch (err) {
+      alert(`Fejl ved afsendelse: ${err.message}`);
+    } finally {
+      setSendingReminderNr(null);
     }
   };
 
@@ -319,13 +383,27 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Google Connect */}
+      {!connected && (
+        <div style={{ margin: '16px 16px 0', background: '#EFF6FF', borderRadius: 14, padding: '16px', border: '1.5px solid #BFDBFE' }}>
+          <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>🔗 Forbind til Google</div>
+          <div style={{ fontSize: 13, color: '#4B5563', marginBottom: 12 }}>
+            Forbind din Google-konto for at se regnskab, udestående fakturaer og bruge fakturaer.
+          </div>
+          <button onClick={handleConnect} disabled={connecting}
+            style={{ width: '100%', background: '#2563EB', color: '#fff', borderRadius: 10, padding: '12px 0', fontSize: 15, fontWeight: 800, opacity: connecting ? 0.6 : 1 }}>
+            {connecting ? '⏳ Forbinder...' : '🔗 Forbind til Google'}
+          </button>
+        </div>
+      )}
+
       {/* Regnskab fra Google Sheet */}
-      {isConnected() && (
+      {connected && (
         <RegnskabCard data={regnskab} loading={regnskabLoading} err={regnskabErr} onRefresh={loadRegnskab} />
       )}
 
       {/* Udestående fakturaer */}
-      {isConnected() && (
+      {connected && (
         <UdestaaendeCard
           invoices={invoices}
           loading={invoicesLoading}
@@ -333,6 +411,8 @@ export default function Dashboard() {
           onRefresh={loadInvoices}
           onMarkPaid={handleMarkPaid}
           markingNr={markingNr}
+          onSendReminder={handleSendReminder}
+          sendingReminderNr={sendingReminderNr}
         />
       )}
 
