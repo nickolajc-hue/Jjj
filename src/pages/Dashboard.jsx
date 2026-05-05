@@ -225,25 +225,24 @@ export default function Dashboard() {
   const [invoicesErr, setInvoicesErr] = useState(null);
   const [markingNr, setMarkingNr] = useState(null);
   const [sendingReminderNr, setSendingReminderNr] = useState(null);
-  const [connected, setConnected] = useState(isConnected);
+  // True if a token was ever stored (even if expired) — auto-refresh will handle it
+  const [connected, setConnected] = useState(() => !!localStorage.getItem('g_tok'));
   const [connecting, setConnecting] = useState(false);
 
   const loadRegnskab = () => {
-    if (!isConnected()) return;
     setRegnskabLoading(true);
     setRegnskabErr(null);
     fetchRegnskab()
-      .then(r => setRegnskab(r))
+      .then(r => { setRegnskab(r); setConnected(true); })
       .catch(e => setRegnskabErr(e.message))
       .finally(() => setRegnskabLoading(false));
   };
 
   const loadInvoices = () => {
-    if (!isConnected()) return;
     setInvoicesLoading(true);
     setInvoicesErr(null);
     fetchInvoices()
-      .then(r => setInvoices(r))
+      .then(r => { setInvoices(r); setConnected(true); })
       .catch(e => setInvoicesErr(e.message))
       .finally(() => setInvoicesLoading(false));
   };
@@ -294,8 +293,12 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    loadRegnskab();
-    loadInvoices();
+    // If we had a token before (even expired), try silent refresh — no popup if Google session is active
+    if (localStorage.getItem('g_tok')) {
+      signIn()
+        .then(() => { loadRegnskab(); loadInvoices(); })
+        .catch(() => { setConnected(false); }); // truly logged out → show connect button
+    }
     const customers = getCustomers();
     const appts = getAppointments();
     const customerMap = Object.fromEntries(customers.map(c => [c.id, c.name]));
