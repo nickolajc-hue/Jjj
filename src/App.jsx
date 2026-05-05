@@ -12,6 +12,7 @@ import MinDag from './pages/MinDag.jsx';
 import Kalender from './pages/Kalender.jsx';
 import Udgift from './pages/Udgift.jsx';
 import ManuelFaktura from './pages/ManuelFaktura.jsx';
+import Fakturaer from './pages/Fakturaer.jsx';
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/tilbud" element={<Tilbud />} />
             <Route path="/udgift" element={<Udgift />} />
             <Route path="/faktura/manuel" element={<ManuelFaktura />} />
+            <Route path="/fakturaer" element={<Fakturaer />} />
           </Routes>
         </div>
         <BottomNav />

@@ -154,8 +154,13 @@ function UdestaaendeCard({ invoices, loading, err, onRefresh, onMarkPaid, markin
   return (
     <div style={s.section}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div style={s.sectionTitle}>📋 Udestående fakturaer</div>
-        <button onClick={onRefresh} style={{ fontSize: 18, background: 'none', color: '#9CA3AF', padding: '0 2px' }} title="Opdater">↻</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={s.sectionTitle}>📋 Udestående fakturaer</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <a href="#/fakturaer" style={{ fontSize: 12, color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>Se alle →</a>
+          <button onClick={onRefresh} style={{ fontSize: 18, background: 'none', color: '#9CA3AF', padding: '0 2px' }} title="Opdater">↻</button>
+        </div>
       </div>
       {loading && <div style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', padding: '8px 0' }}>Henter...</div>}
       {err    && <div style={{ color: '#EF4444', fontSize: 12, padding: '4px 0' }}>⚠️ {err}</div>}
