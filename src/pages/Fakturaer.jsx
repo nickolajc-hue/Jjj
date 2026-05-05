@@ -169,35 +169,42 @@ export default function Fakturaer() {
               </div>
             ) : null}
 
-            {/* Action buttons */}
+            {/* Action buttons — row 1: Se faktura + Send igen (always) */}
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              {inv.docUrl && (
+              {inv.docUrl ? (
                 <a href={inv.docUrl} target="_blank" rel="noreferrer"
                   style={{ flex: 1, background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700, textAlign: 'center', textDecoration: 'none' }}>
-                  📄 Åbn
+                  📄 Se faktura
                 </a>
+              ) : (
+                <div style={{ flex: 1, background: '#F3F4F6', color: '#9CA3AF', borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700, textAlign: 'center' }}>
+                  📄 Ingen fil
+                </div>
               )}
-              {!inv.paidDate && (
-                <>
-                  {rs?.overdue ? (
-                    <button onClick={() => handleReminder(inv)} disabled={reminderNr === inv.nr}
-                      style={{ flex: 1, background: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D', borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700, opacity: reminderNr === inv.nr ? 0.6 : 1 }}>
-                      {reminderNr === inv.nr ? '⏳' : '📨 Rykker'}
-                    </button>
-                  ) : (
-                    <button onClick={() => handleSend(inv)} disabled={sendingNr === inv.nr || !email}
-                      title={!email ? 'Ingen email på kunden' : ''}
-                      style={{ flex: 1, background: email ? '#059669' : '#E5E7EB', color: email ? '#fff' : '#9CA3AF', borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700, opacity: sendingNr === inv.nr ? 0.6 : 1 }}>
-                      {sendingNr === inv.nr ? '⏳' : '📧 Send'}
-                    </button>
-                  )}
-                  <button onClick={() => handleMarkPaid(inv)} disabled={markingNr === inv.nr}
-                    style={{ flex: 1, background: '#F59E0B', color: '#fff', borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700, opacity: markingNr === inv.nr ? 0.6 : 1 }}>
-                    {markingNr === inv.nr ? '⏳' : '💰 Betalt'}
-                  </button>
-                </>
-              )}
+              <button onClick={() => handleSend(inv)} disabled={sendingNr === inv.nr || !email}
+                title={!email ? 'Ingen email på kunden' : ''}
+                style={{ flex: 1, background: email ? '#EFF6FF' : '#F3F4F6', color: email ? '#2563EB' : '#9CA3AF', border: email ? '1px solid #BFDBFE' : 'none', borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700, opacity: sendingNr === inv.nr ? 0.6 : 1 }}>
+                {sendingNr === inv.nr ? '⏳' : '📧 Send igen'}
+              </button>
             </div>
+
+            {/* Action buttons — row 2: Rykker + Betalt (unpaid only) */}
+            {!inv.paidDate && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                {rs?.overdue ? (
+                  <button onClick={() => handleReminder(inv)} disabled={reminderNr === inv.nr}
+                    style={{ flex: 1, background: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D', borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700, opacity: reminderNr === inv.nr ? 0.6 : 1 }}>
+                    {reminderNr === inv.nr ? '⏳' : '📨 Rykker'}
+                  </button>
+                ) : (
+                  <div style={{ flex: 1 }} />
+                )}
+                <button onClick={() => handleMarkPaid(inv)} disabled={markingNr === inv.nr}
+                  style={{ flex: 1, background: '#F59E0B', color: '#fff', borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700, opacity: markingNr === inv.nr ? 0.6 : 1 }}>
+                  {markingNr === inv.nr ? '⏳' : '💰 Betalt'}
+                </button>
+              </div>
+            )}
           </div>
         );
       })}
