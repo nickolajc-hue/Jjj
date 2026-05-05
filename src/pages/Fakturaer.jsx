@@ -169,17 +169,13 @@ export default function Fakturaer() {
               </div>
             ) : null}
 
-            {/* Action buttons — row 1: Se faktura + Send igen (always) */}
+            {/* Action buttons — row 1: Se faktura + Send igen */}
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              {inv.docUrl ? (
+              {inv.docUrl && (
                 <a href={inv.docUrl} target="_blank" rel="noreferrer"
                   style={{ flex: 1, background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700, textAlign: 'center', textDecoration: 'none' }}>
                   📄 Se faktura
                 </a>
-              ) : (
-                <div style={{ flex: 1, background: '#F3F4F6', color: '#9CA3AF', borderRadius: 8, padding: '8px 0', fontSize: 13, fontWeight: 700, textAlign: 'center' }}>
-                  📄 Ingen fil
-                </div>
               )}
               <button onClick={() => handleSend(inv)} disabled={sendingNr === inv.nr || !email}
                 title={!email ? 'Ingen email på kunden' : ''}
