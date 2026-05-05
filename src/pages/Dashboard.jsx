@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCustomers, getAppointments, occursOnDate, calcExpectedIncome } from '../storage.js';
-import { fetchRegnskab, fetchInvoices, markInvoicePaid, sendReminder, signIn, isConnected } from '../googleDrive.js';
+import { fetchRegnskab, fetchInvoices, markInvoicePaid, sendReminder, sendInvoiceFromSheet, signIn, isConnected } from '../googleDrive.js';
 
 const s = {
   header: { background: '#2563EB', color: '#fff', padding: '24px 20px 48px', paddingTop: 'calc(24px + env(safe-area-inset-top))' },
@@ -147,7 +147,7 @@ function rykkerstatus(dueISO) {
   return          { color: '#EF4444', text: `${diff} dag${diff !== 1 ? 'e' : ''} forsinket — send rykker`, overdue: true };
 }
 
-function UdestaaendeCard({ invoices, loading, err, onRefresh, onMarkPaid, markingNr, onSendReminder, sendingReminderNr }) {
+function UdestaaendeCard({ invoices, loading, err, onRefresh, onMarkPaid, markingNr, onSendReminder, sendingReminderNr, onSendInvoice, sendingInvoiceNr }) {
   const unpaid = (invoices || []).filter(inv => !inv.paidDate);
   const total  = unpaid.reduce((s, inv) => s + inv.beloeb, 0);
 
@@ -171,9 +171,18 @@ function UdestaaendeCard({ invoices, loading, err, onRefresh, onMarkPaid, markin
             const rs = rykkerstatus(inv.dueISO);
             return (
               <div key={inv.nr} style={{ padding: '10px 0', borderBottom: '1px solid #F3F4F6' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: rs?.overdue ? 6 : 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>{inv.nr} · {inv.kunde}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {inv.nr} · {inv.kunde}
+                      {inv.docUrl && (
+                        <a href={inv.docUrl} target="_blank" rel="noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          style={{ fontSize: 11, color: '#2563EB', fontWeight: 600, textDecoration: 'underline' }}>
+                          Åbn
+                        </a>
+                      )}
+                    </div>
                     <div style={{ fontSize: 12, color: '#6B7280' }}>{inv.date} · {inv.beloeb.toLocaleString('da-DK')} kr</div>
                     {rs && (
                       <div style={{ fontSize: 12, fontWeight: 700, color: rs.color, marginTop: 2 }}>
@@ -189,15 +198,26 @@ function UdestaaendeCard({ invoices, loading, err, onRefresh, onMarkPaid, markin
                     {markingNr === inv.nr ? '⏳' : '💰 Betalt'}
                   </button>
                 </div>
-                {rs?.overdue && (
-                  <button
-                    onClick={() => onSendReminder(inv)}
-                    disabled={sendingReminderNr === inv.nr}
-                    style={{ width: '100%', background: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D', borderRadius: 8, padding: '7px 0', fontSize: 12, fontWeight: 700, opacity: sendingReminderNr === inv.nr ? 0.6 : 1 }}
-                  >
-                    {sendingReminderNr === inv.nr ? '⏳ Sender rykker...' : '📨 Send rykker'}
-                  </button>
-                )}
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  {!rs?.overdue && (
+                    <button
+                      onClick={() => onSendInvoice(inv)}
+                      disabled={sendingInvoiceNr === inv.nr}
+                      style={{ flex: 1, background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: 8, padding: '6px 0', fontSize: 12, fontWeight: 700, opacity: sendingInvoiceNr === inv.nr ? 0.6 : 1 }}
+                    >
+                      {sendingInvoiceNr === inv.nr ? '⏳ Sender...' : '📧 Send faktura'}
+                    </button>
+                  )}
+                  {rs?.overdue && (
+                    <button
+                      onClick={() => onSendReminder(inv)}
+                      disabled={sendingReminderNr === inv.nr}
+                      style={{ flex: 1, background: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D', borderRadius: 8, padding: '6px 0', fontSize: 12, fontWeight: 700, opacity: sendingReminderNr === inv.nr ? 0.6 : 1 }}
+                    >
+                      {sendingReminderNr === inv.nr ? '⏳ Sender rykker...' : '📨 Send rykker'}
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -225,6 +245,7 @@ export default function Dashboard() {
   const [invoicesErr, setInvoicesErr] = useState(null);
   const [markingNr, setMarkingNr] = useState(null);
   const [sendingReminderNr, setSendingReminderNr] = useState(null);
+  const [sendingInvoiceNr, setSendingInvoiceNr] = useState(null);
   // True if a token was ever stored (even if expired) — auto-refresh will handle it
   const [connected, setConnected] = useState(() => !!localStorage.getItem('g_tok'));
   const [connecting, setConnecting] = useState(false);
@@ -289,6 +310,25 @@ export default function Dashboard() {
       alert(`Fejl ved afsendelse: ${err.message}`);
     } finally {
       setSendingReminderNr(null);
+    }
+  };
+
+  const handleSendInvoice = async (inv) => {
+    const custs = getCustomers();
+    const cust  = custs.find(c => c.name?.toLowerCase() === inv.kunde?.toLowerCase());
+    const email = cust?.email;
+    if (!email) {
+      alert(`Ingen email fundet på "${inv.kunde}". Åbn kunden og tilføj en email.`);
+      return;
+    }
+    setSendingInvoiceNr(inv.nr);
+    try {
+      await sendInvoiceFromSheet({ custEmail: email, custName: inv.kunde, nr: inv.nr, service: inv.service, beloeb: inv.beloeb, dueISO: inv.dueISO, docUrl: inv.docUrl });
+      alert(`Faktura sendt til ${email}`);
+    } catch (err) {
+      alert(`Fejl: ${err.message}`);
+    } finally {
+      setSendingInvoiceNr(null);
     }
   };
 
@@ -416,6 +456,8 @@ export default function Dashboard() {
           markingNr={markingNr}
           onSendReminder={handleSendReminder}
           sendingReminderNr={sendingReminderNr}
+          onSendInvoice={handleSendInvoice}
+          sendingInvoiceNr={sendingInvoiceNr}
         />
       )}
 

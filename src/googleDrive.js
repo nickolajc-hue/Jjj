@@ -515,7 +515,7 @@ export async function markInvoicePaid(nr) {
 export async function fetchInvoices() {
   const { id: sheetId, tab: sheetTab } = await getSheet();
   const tab = encodeURIComponent(sheetTab);
-  const res = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B3:J200?valueRenderOption=UNFORMATTED_VALUE`);
+  const res = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B3:K200?valueRenderOption=UNFORMATTED_VALUE`);
   function fromSerial(s) {
     const n = Number(s);
     if (!n || isNaN(n)) return null;
@@ -541,6 +541,7 @@ export async function fetchInvoices() {
         beloeb:   Number(r[4]) || 0,
         nr:       r[7] || '',
         paidDate: r[8] ? fromSerial(r[8]) : null,
+        docUrl:   r[9] || null,   // column K
       };
     });
 }
@@ -592,6 +593,12 @@ export async function sendReminder({ custName, custEmail, nr, amount, dueISO }) 
   });
 }
 
+// ── Send invoice email from sheet data (no appointment object needed) ────
+export async function sendInvoiceFromSheet({ custEmail, custName, nr, service, beloeb, dueISO, docUrl }) {
+  const due = dueISO ? new Date(dueISO + 'T00:00:00Z') : new Date();
+  await sendInvoiceEmail({ to: custEmail, custName, nr, service, amount: beloeb, due, docUrl });
+}
+
 // ── Send email for an already-created invoice ─────────────────────────────
 export async function sendInvoice({ customer, appointment, nr, docUrl }) {
   const amount   = appointment.price || 0;
@@ -634,12 +641,13 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
     }
   }
   const writeRow = 3 + writeOffset;
+  // B=dato C=kunde D=service E=service F=beløb G=Momsfritaget H=beløb I=nr J=(betalt, blank) K=docUrl
   await api(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${writeRow}:I${writeRow}?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${writeRow}:K${writeRow}?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       body: JSON.stringify({
-        values: [[sheetsDate(date), custName, service, service, amount, 'Momsfritaget', amount, nr]],
+        values: [[sheetsDate(date), custName, service, service, amount, 'Momsfritaget', amount, nr, '', docUrl]],
       }),
     }
   );
@@ -703,8 +711,8 @@ export async function createManualInvoice({ customer, date, lines, sendEmail = t
   }
   const writeRow = 3 + writeOffset;
   await api(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${writeRow}:I${writeRow}?valueInputOption=USER_ENTERED`,
-    { method: 'PUT', body: JSON.stringify({ values: [[sheetsDate(d), custName, service, service, total, 'Momsfritaget', total, nr]] }) }
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!B${writeRow}:K${writeRow}?valueInputOption=USER_ENTERED`,
+    { method: 'PUT', body: JSON.stringify({ values: [[sheetsDate(d), custName, service, service, total, 'Momsfritaget', total, nr, '', docUrl]] }) }
   );
 
   if (tabId != null) {
