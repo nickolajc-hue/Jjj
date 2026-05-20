@@ -65,6 +65,9 @@ export default function Kalender() {
   const [markingPaidId, setMarkingPaidId] = useState(null);
   const [invoiceResults, setInvoiceResults] = useState(() => JSON.parse(localStorage.getItem('inv_results') || '{}'));
 
+  // Computed from selectedDay — placed here so invoice handlers can use it
+  const selStr = selectedDay ? toDateStr(selectedDay) : null;
+
   useEffect(() => {
     const allAppts = getAppointments();
     const custs    = getCustomers();
@@ -187,7 +190,7 @@ export default function Kalender() {
     setInvoicingMode(sendEmail ? 'send' : 'create');
     try {
       const result = await createInvoice({ appointment: appt, customer: cust, sendEmail });
-      saveInvResult(appt.id, result);
+      saveInvResult(`${appt.id}_${selStr}`, result);
     } catch (err) {
       alert(`Fejl ved oprettelse af faktura: ${err.message}`);
     } finally {
@@ -198,12 +201,12 @@ export default function Kalender() {
 
   const handleSendEmail = async (appt, cust, e) => {
     e.stopPropagation();
-    const res = invoiceResults[appt.id];
+    const res = invoiceResults[`${appt.id}_${selStr}`];
     if (!res) return;
     setSendingId(appt.id);
     try {
       await sendInvoice({ customer: cust, appointment: appt, nr: res.nr, docUrl: res.docUrl });
-      saveInvResult(appt.id, { ...res, emailSent: true });
+      saveInvResult(`${appt.id}_${selStr}`, { ...res, emailSent: true });
     } catch (err) {
       alert(`Fejl ved afsendelse: ${err.message}`);
     } finally {
@@ -213,14 +216,14 @@ export default function Kalender() {
 
   const handleMarkPaid = async (appt, e) => {
     e.stopPropagation();
-    const res = invoiceResults[appt.id];
+    const res = invoiceResults[`${appt.id}_${selStr}`];
     if (!res) return;
     setMarkingPaidId(appt.id);
     try {
       await markInvoicePaid(res.nr);
       const today = new Date();
       const paidDate = `${today.getDate()}/${today.getMonth() + 1}-${today.getFullYear()}`;
-      saveInvResult(appt.id, { ...res, paid: true, paidDate });
+      saveInvResult(`${appt.id}_${selStr}`, { ...res, paid: true, paidDate });
     } catch (err) {
       alert(`Fejl ved markering: ${err.message}`);
     } finally {
@@ -234,7 +237,6 @@ export default function Kalender() {
   for (let d = 1; d <= daysInMon; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const selStr    = selectedDay ? toDateStr(selectedDay) : null;
   const selAppts  = selStr ? (apptsByDay[selStr] || []) : [];
   const selIsOff  = selStr ? offDays.has(selStr) : false;
   const selIsToday = selectedDay && selectedDay.getTime() === today.getTime();
@@ -680,29 +682,29 @@ export default function Kalender() {
                         }
                         {a.duration > 0 && <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginTop: 4 }}>⏱ {formatDuration(a.duration)}</div>}
                         {a.price > 0    && <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700, marginTop: 2 }}>💰 {a.price.toLocaleString('da-DK')} kr</div>}
-                        {invoiceResults[a.id] ? (
-                          <div style={{ marginTop: 8, background: invoiceResults[a.id].paid ? '#ECFDF5' : '#D1FAE5', borderRadius: 8, padding: '8px 10px', fontSize: 12, border: invoiceResults[a.id].paid ? '1.5px solid #6EE7B7' : 'none' }}>
+                        {invoiceResults[`${a.id}_${selStr}`] ? (
+                          <div style={{ marginTop: 8, background: invoiceResults[`${a.id}_${selStr}`].paid ? '#ECFDF5' : '#D1FAE5', borderRadius: 8, padding: '8px 10px', fontSize: 12, border: invoiceResults[`${a.id}_${selStr}`].paid ? '1.5px solid #6EE7B7' : 'none' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>{invoiceResults[a.id].paid ? '💰' : '✅'} Faktura {invoiceResults[a.id].nr}</span>
-                                <a href={invoiceResults[a.id].docUrl} target="_blank" rel="noreferrer"
+                                <span>{invoiceResults[`${a.id}_${selStr}`].paid ? '💰' : '✅'} Faktura {invoiceResults[`${a.id}_${selStr}`].nr}</span>
+                                <a href={invoiceResults[`${a.id}_${selStr}`].docUrl} target="_blank" rel="noreferrer"
                                   onClick={e => e.stopPropagation()}
                                   style={{ color: '#059669', fontWeight: 700, textDecoration: 'underline' }}>Åbn</a>
                               </div>
-                              <button onClick={e => deleteInvResult(a.id, e)}
+                              <button onClick={e => deleteInvResult(`${a.id}_${selStr}`, e)}
                                 style={{ color: '#6B7280', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>×</button>
                             </div>
-                            {invoiceResults[a.id].paid
-                              ? <div style={{ color: '#065F46', marginTop: 4, fontWeight: 700 }}>✅ Betalt {invoiceResults[a.id].paidDate}</div>
+                            {invoiceResults[`${a.id}_${selStr}`].paid
+                              ? <div style={{ color: '#065F46', marginTop: 4, fontWeight: 700 }}>✅ Betalt {invoiceResults[`${a.id}_${selStr}`].paidDate}</div>
                               : (
                                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                                   {cust?.email && (
                                     <button
                                       onClick={e => handleSendEmail(a, cust, e)}
                                       disabled={sendingId === a.id}
-                                      style={{ flex: 1, background: invoiceResults[a.id].emailSent ? '#F0FDF4' : '#059669', color: invoiceResults[a.id].emailSent ? '#059669' : '#fff', borderRadius: 6, padding: '5px 0', fontSize: 12, fontWeight: 700, opacity: sendingId === a.id ? 0.6 : 1, border: invoiceResults[a.id].emailSent ? '1px solid #6EE7B7' : 'none' }}
+                                      style={{ flex: 1, background: invoiceResults[`${a.id}_${selStr}`].emailSent ? '#F0FDF4' : '#059669', color: invoiceResults[`${a.id}_${selStr}`].emailSent ? '#059669' : '#fff', borderRadius: 6, padding: '5px 0', fontSize: 12, fontWeight: 700, opacity: sendingId === a.id ? 0.6 : 1, border: invoiceResults[`${a.id}_${selStr}`].emailSent ? '1px solid #6EE7B7' : 'none' }}
                                     >
-                                      {sendingId === a.id ? '⏳...' : invoiceResults[a.id].emailSent ? '📧 Gensend' : '📧 Send'}
+                                      {sendingId === a.id ? '⏳...' : invoiceResults[`${a.id}_${selStr}`].emailSent ? '📧 Gensend' : '📧 Send'}
                                     </button>
                                   )}
                                   <button
