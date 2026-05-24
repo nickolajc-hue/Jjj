@@ -5,6 +5,7 @@ import { getAppointments, getCustomers, occursOnDate, formatDuration, formatRecu
 import CalendarPicker from '../components/CalendarPicker.jsx';
 
 const HOME_KEY = 'kundeapp_home_address';
+const END_KEY  = 'kundeapp_end_address';
 const STARTTIME_KEY = 'kundeapp_start_time';
 const DEFAULT_HOME = 'Æblerosevej 8, 9430 Vadum';
 
@@ -182,6 +183,9 @@ export default function MinDag() {
   const [homeAddress, setHomeAddress] = useState(() => localStorage.getItem(HOME_KEY) || DEFAULT_HOME);
   const [editingHome, setEditingHome] = useState(false);
   const [tempHome, setTempHome] = useState('');
+  const [endAddress, setEndAddress] = useState(() => localStorage.getItem(END_KEY) || '');
+  const [editingEnd, setEditingEnd] = useState(false);
+  const [tempEnd, setTempEnd] = useState('');
   const [startTime, setStartTime] = useState(() => localStorage.getItem(STARTTIME_KEY) || '08:00');
 
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -228,8 +232,10 @@ export default function MinDag() {
       return;
     }
 
-    const [homeCoords, ...apptCoords] = await Promise.all([
+    const effectiveEnd = endAddress.trim() || homeAddress;
+    const [homeCoords, endCoords, ...apptCoords] = await Promise.all([
       geocode(homeAddress),
+      geocode(effectiveEnd),
       ...dayAppts.map(a => geocode(a.customer?.address)),
     ]);
 
@@ -246,14 +252,15 @@ export default function MinDag() {
     const routed = nearestNeighborRoute(homeCoords, enriched);
     const routedKm = routed.reduce((sum, a) => sum + (a.distFromPrev || 0), 0);
     const lastWithCoords = [...routed].reverse().find(a => a.coords);
+    const effectiveEndCoords = endCoords || homeCoords;
     const returnKm = lastWithCoords
-      ? haversine(lastWithCoords.coords.lat, lastWithCoords.coords.lng, homeCoords.lat, homeCoords.lng)
+      ? haversine(lastWithCoords.coords.lat, lastWithCoords.coords.lng, effectiveEndCoords.lat, effectiveEndCoords.lng)
       : 0;
     setHomeReturnKm(returnKm);
     setTotalKm(routedKm + returnKm);
     setAppointments(routed);
     setLoading(false);
-  }, [homeAddress, selectedDate]);
+  }, [homeAddress, endAddress, selectedDate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -261,6 +268,18 @@ export default function MinDag() {
     localStorage.setItem(HOME_KEY, tempHome.trim());
     setHomeAddress(tempHome.trim());
     setEditingHome(false);
+  };
+
+  const saveEnd = () => {
+    localStorage.setItem(END_KEY, tempEnd.trim());
+    setEndAddress(tempEnd.trim());
+    setEditingEnd(false);
+  };
+
+  const clearEnd = () => {
+    localStorage.removeItem(END_KEY);
+    setEndAddress('');
+    setEditingEnd(false);
   };
 
   // Beregn dage med aftaler (til kalender-dots)
@@ -321,8 +340,9 @@ export default function MinDag() {
       {/* Bopæl-kort */}
       <div style={{ margin: '-20px 16px 0', position: 'relative', zIndex: 1 }}>
         <div style={{ background: '#fff', borderRadius: 14, padding: '12px 14px', boxShadow: '0 2px 14px rgba(0,0,0,0.10)' }}>
+          {/* Start */}
           <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
-            Start / bopæl
+            Start
           </div>
           {editingHome ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -339,6 +359,33 @@ export default function MinDag() {
               <span style={{ fontSize: 18 }}>🏠</span>
               <span style={{ flex: 1, fontSize: 14, color: '#374151' }}>{homeAddress}</span>
               <button onClick={() => { setTempHome(homeAddress); setEditingHome(true); }}
+                style={{ color: '#9CA3AF', fontSize: 13, flexShrink: 0 }}>Skift</button>
+            </div>
+          )}
+
+          {/* Slut */}
+          <div style={{ borderTop: '1px solid #F3F4F6', margin: '10px 0 6px' }} />
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+            Slut
+          </div>
+          {editingEnd ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input autoFocus placeholder="Adresse…"
+                style={{ flex: 1, fontSize: 14, borderBottom: '2px solid #2563EB', paddingBottom: 4, color: '#111827' }}
+                value={tempEnd} onChange={e => setTempEnd(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveEnd(); if (e.key === 'Escape') setEditingEnd(false); }}
+              />
+              <button onClick={saveEnd} style={{ color: '#2563EB', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>Gem</button>
+              {endAddress && <button onClick={clearEnd} style={{ color: '#EF4444', fontSize: 14, flexShrink: 0 }}>Ryd</button>}
+              <button onClick={() => setEditingEnd(false)} style={{ color: '#9CA3AF', fontSize: 14, flexShrink: 0 }}>✕</button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 18 }}>🏁</span>
+              <span style={{ flex: 1, fontSize: 14, color: endAddress ? '#374151' : '#9CA3AF' }}>
+                {endAddress || 'Samme som start'}
+              </span>
+              <button onClick={() => { setTempEnd(endAddress); setEditingEnd(true); }}
                 style={{ color: '#9CA3AF', fontSize: 13, flexShrink: 0 }}>Skift</button>
             </div>
           )}
@@ -369,12 +416,12 @@ export default function MinDag() {
               <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 36, flexShrink: 0 }}>
                   <div style={{ width: 36, height: 36, borderRadius: 18, background: '#6B7280', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-                    🏠
+                    {endAddress ? '🏁' : '🏠'}
                   </div>
                 </div>
                 <div style={{ flex: 1, background: '#F9FAFB', borderRadius: 14, padding: '12px 14px', marginBottom: 10, boxShadow: '0 1px 6px rgba(0,0,0,0.06)', border: '1px solid #E5E7EB' }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: '#374151' }}>Hjem</div>
-                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 1 }}>{homeAddress}</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: '#374151' }}>{endAddress ? 'Slut destination' : 'Hjem'}</div>
+                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 1 }}>{endAddress || homeAddress}</div>
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#FFF7ED', borderRadius: 8, padding: '3px 10px', marginTop: 8 }}>
                     <span style={{ fontSize: 12 }}>🚗</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B' }}>~{homeReturnKm.toFixed(1)} km retur</span>
