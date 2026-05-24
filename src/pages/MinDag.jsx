@@ -478,7 +478,7 @@ async function compressPhoto(file) {
 // ── Aftale-kort ────────────────────────────────────────────────────────────
 function AppCard({ appt, index, isFirst, isLast, date }) {
   const addr = appt.customer?.address;
-  const mapsUrl = addr ? `https://maps.apple.com/?daddr=${encodeURIComponent(addr)}&dirflg=d` : null;
+  const mapsUrl = addr ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}` : null;
   const color = getApptColor(appt);
 
   const dayKey = getDayKey(appt.id, date);
