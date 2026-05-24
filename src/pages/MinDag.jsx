@@ -126,12 +126,21 @@ function PackingList({ appointments, date }) {
 }
 
 // ── Dagsplan-oversigt ──────────────────────────────────────────────────────
-function DagsPlan({ appointments, totalKm, startTime, onStartTimeChange }) {
+function DagsPlan({ appointments, totalKm, startTime, onStartTimeChange, homeAddress, endAddress }) {
   if (appointments.length === 0) return null;
   const totalWorkMin = appointments.reduce((s, a) => s + (a.duration || 0), 0);
   const totalTravelMin = Math.round(totalKm * 2); // ~30 km/h → 2 min/km
   const totalMin = totalWorkMin + totalTravelMin;
   const endTime = addMinutes(startTime, totalMin);
+
+  const routeAddrs = [
+    homeAddress,
+    ...appointments.map(a => a.customer?.address).filter(Boolean),
+    endAddress || homeAddress,
+  ];
+  const mapsUrl = routeAddrs.length >= 3
+    ? `https://www.google.com/maps/dir/${routeAddrs.map(a => encodeURIComponent(a)).join('/')}`
+    : null;
 
   return (
     <div style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 12, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
@@ -169,10 +178,17 @@ function DagsPlan({ appointments, totalKm, startTime, onStartTimeChange }) {
       </div>
 
       {/* Sluttid */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F9FAFB', borderRadius: 10, padding: '10px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F9FAFB', borderRadius: 10, padding: '10px 14px', marginBottom: mapsUrl ? 10 : 0 }}>
         <span style={{ fontSize: 14, color: '#6B7280', fontWeight: 600 }}>Forventet slut</span>
         <span style={{ fontSize: 20, fontWeight: 900, color: '#111827' }}>{endTime}</span>
       </div>
+
+      {mapsUrl && (
+        <a href={mapsUrl} target="_blank" rel="noreferrer"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: 10, padding: '10px 0', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+          🗺 Se hele ruten i Google Maps
+        </a>
+      )}
     </div>
   );
 }
@@ -407,7 +423,7 @@ export default function MinDag() {
           </div>
         ) : (
           <>
-            <DagsPlan appointments={appointments} totalKm={totalKm} startTime={startTime} onStartTimeChange={saveStartTime} />
+            <DagsPlan appointments={appointments} totalKm={totalKm} startTime={startTime} onStartTimeChange={saveStartTime} homeAddress={homeAddress} endAddress={endAddress} />
             <PackingList appointments={appointments} date={selectedDate} />
             {appointments.map((a, i) => (
               <AppCard key={a.id} appt={a} index={i} isFirst={i === 0} isLast={i === appointments.length - 1 && homeReturnKm === 0} date={selectedDate} />
