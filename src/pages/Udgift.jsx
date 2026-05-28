@@ -3,7 +3,7 @@ import { getExpenses, saveExpenses, newId } from '../storage.js';
 import { writeExpense } from '../googleDrive.js';
 
 const KATEGORIER = ['Brændstof', 'Arbejdstøj', 'Værktøj', 'Kontorartikler', 'Telefon/Internet', 'Forsikring', 'Andet'];
-const STATS_TAKST = 3.81;
+const STATS_TAKST = 3.94;
 
 const labelStyle = { fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6, display: 'block' };
 const inputStyle = { width: '100%', fontSize: 15, borderBottom: '2px solid #E5E7EB', paddingBottom: 6, color: '#111827', background: 'transparent' };
@@ -207,7 +207,7 @@ export default function Udgift() {
               <div style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                   <span style={labelStyle}>Takst (kr/km)</span>
-                  <span style={{ fontSize: 10, color: '#9CA3AF' }}>Statens takst 2025: 3,81</span>
+                  <span style={{ fontSize: 10, color: '#9CA3AF' }}>Statens takst 2026: 3,94</span>
                 </div>
                 <input type="number" inputMode="decimal" value={rate}
                   onChange={e => setRate(e.target.value)} style={inputStyle} />
