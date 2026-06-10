@@ -1,4 +1,5 @@
 import { FIRMA } from './googleDrive.js';
+import { occursOnDate } from './storage.js';
 
 const TZID = 'Europe/Copenhagen';
 
@@ -14,6 +15,10 @@ function addMinutes(hhmm, minutes) {
   const [hh, mm] = hhmm.split(':').map(Number);
   const total = hh * 60 + mm + minutes;
   return `${pad(Math.floor(total / 60) % 24)}:${pad(total % 60)}`;
+}
+
+function dateToStr(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 const VTIMEZONE_CPH = [
@@ -36,8 +41,31 @@ const VTIMEZONE_CPH = [
   'END:VTIMEZONE',
 ].join('\r\n');
 
+// Expands all appointments (including recurring) into concrete (date, appt) pairs
+// within the window [from, to].
+function expandAppointments(appointments, from, to) {
+  const result = {}; // date string -> [appt, ...]
+  const cursor = new Date(from);
+  cursor.setHours(0, 0, 0, 0);
+  const end = new Date(to);
+  end.setHours(0, 0, 0, 0);
+
+  while (cursor <= end) {
+    const dateStr = dateToStr(cursor);
+    appointments.forEach(appt => {
+      if (occursOnDate(appt, cursor)) {
+        if (!result[dateStr]) result[dateStr] = [];
+        result[dateStr].push(appt);
+      }
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
+}
+
 // Groups appointments by date and creates one timed block-event per day.
-// startTime: "HH:MM" — same value as shown in Min dag's Dagsplan
+// startTime: "HH:MM" — same value as shown in Min dag's Dagsplan.
+// Expands recurring appointments over 30 days back to 365 days forward.
 export function generateICS(appointments, customers = {}, startTime = '08:00') {
   const lines = [
     'BEGIN:VCALENDAR',
@@ -48,16 +76,14 @@ export function generateICS(appointments, customers = {}, startTime = '08:00') {
     VTIMEZONE_CPH,
   ];
 
-  // Group by date (YYYY-MM-DD)
-  const byDate = {};
-  appointments.forEach(appt => {
-    const key = appt.date.slice(0, 10);
-    if (!byDate[key]) byDate[key] = [];
-    byDate[key].push(appt);
-  });
+  const from = new Date();
+  from.setDate(from.getDate() - 30);
+  const to = new Date();
+  to.setFullYear(to.getFullYear() + 1);
+
+  const byDate = expandAppointments(appointments, from, to);
 
   Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).forEach(([date, appts]) => {
-    // Same formula as Min dag: sum of durations, no travel (can't geocode here)
     const totalWorkMin = appts.reduce((s, a) => s + (a.duration || 0), 0);
     const endTime = totalWorkMin > 0 ? addMinutes(startTime, totalWorkMin) : addMinutes(startTime, 60);
 
