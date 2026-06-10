@@ -1,3 +1,5 @@
+import { FIRMA } from './googleDrive.js';
+
 function pad(n) { return String(n).padStart(2, '0'); }
 
 function toICSDate(dateStr) {
@@ -5,34 +7,22 @@ function toICSDate(dateStr) {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
 }
 
-function makeRRule(appt) {
-  if (!appt.recurrence || appt.recurrence === 'none') return null;
-  let rule;
-  switch (appt.recurrence) {
-    case 'daily':    rule = 'FREQ=DAILY'; break;
-    case 'weekly':   rule = 'FREQ=WEEKLY'; break;
-    case 'biweekly': rule = 'FREQ=WEEKLY;INTERVAL=2'; break;
-    case 'monthly':  rule = 'FREQ=MONTHLY'; break;
-    case 'custom': {
-      const w = Math.max(1, appt.recurrenceInterval || 1);
-      rule = `FREQ=WEEKLY;INTERVAL=${w}`;
-      break;
-    }
-    default: return null;
-  }
-  if (appt.recurrenceEndDate) {
-    rule += `;UNTIL=${toICSDate(appt.recurrenceEndDate)}T235959Z`;
-  }
-  return `RRULE:${rule}`;
-}
-
-function nextDay(dateStr) {
+// Returns a local-time ICS datetime string (no Z = floating/local time)
+function toICSDateTime(dateStr, hhmm) {
   const d = new Date(dateStr);
-  d.setDate(d.getDate() + 1);
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  const [hh, mm] = hhmm.split(':').map(Number);
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(hh)}${pad(mm)}00`;
 }
 
-export function generateICS(appointments, customers = {}) {
+function addMinutes(hhmm, minutes) {
+  const [hh, mm] = hhmm.split(':').map(Number);
+  const total = hh * 60 + mm + minutes;
+  return `${pad(Math.floor(total / 60) % 24)}:${pad(total % 60)}`;
+}
+
+// Groups appointments by date and creates one timed block-event per day.
+// startTime: "HH:MM" — the start of the work day (from MinDag's STARTTIME_KEY)
+export function generateICS(appointments, customers = {}, startTime = '08:00') {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -41,27 +31,36 @@ export function generateICS(appointments, customers = {}) {
     'METHOD:PUBLISH',
   ];
 
+  // Group by date (YYYY-MM-DD)
+  const byDate = {};
   appointments.forEach(appt => {
-    const dtstart = toICSDate(appt.date);
-    const dtend   = nextDay(appt.date);
-    const customer = appt.customerId ? customers[appt.customerId] : null;
-    const desc = customer ? customer.name : '';
+    const key = appt.date.slice(0, 10);
+    if (!byDate[key]) byDate[key] = [];
+    byDate[key].push(appt);
+  });
+
+  Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).forEach(([date, appts]) => {
+    const totalWorkMin = appts.reduce((s, a) => s + (a.duration || 60), 0);
+    // Add rough travel buffer: 15 min per appointment transition
+    const travelMin = Math.max(0, appts.length - 1) * 15;
+    const totalMin = totalWorkMin + travelMin;
+
+    const endTime = addMinutes(startTime, totalMin);
+
+    const dtstart = toICSDateTime(date, startTime);
+    const dtend   = toICSDateTime(date, endTime);
+
+    const customerNames = appts
+      .map(a => (a.customerId ? customers[a.customerId]?.name : null) || a.title || 'Opgave')
+      .filter(Boolean)
+      .join('\\n');
 
     lines.push('BEGIN:VEVENT');
-    lines.push(`UID:${appt.id}@kundeapp`);
-    lines.push(`DTSTART;VALUE=DATE:${dtstart}`);
-    lines.push(`DTEND;VALUE=DATE:${dtend}`);
-    lines.push(`SUMMARY:${(appt.title || 'Opgave').replace(/[\\;,]/g, s => '\\' + s)}`);
-    if (desc) lines.push(`DESCRIPTION:${desc.replace(/[\\;,]/g, s => '\\' + s)}`);
-
-    const rrule = makeRRule(appt);
-    if (rrule) lines.push(rrule);
-
-    if (appt.exceptions && appt.exceptions.length > 0) {
-      const exdates = appt.exceptions.map(toICSDate).join(',');
-      lines.push(`EXDATE;VALUE=DATE:${exdates}`);
-    }
-
+    lines.push(`UID:day-${date}@kundeapp`);
+    lines.push(`DTSTART:${dtstart}`);
+    lines.push(`DTEND:${dtend}`);
+    lines.push(`SUMMARY:${FIRMA.navn}`);
+    lines.push(`DESCRIPTION:${customerNames}`);
     lines.push('END:VEVENT');
   });
 
