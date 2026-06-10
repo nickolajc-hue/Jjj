@@ -156,7 +156,9 @@ export default function Kalender() {
     const appts = getAppointments();
     const custs = Object.fromEntries(getCustomers().map(c => [c.id, c]));
     const startTime = localStorage.getItem('kundeapp_start_time') || '08:00';
-    const ics   = generateICS(appts, custs, startTime);
+    const from = new Date(viewYear, viewMonth, 1);
+    const to   = new Date(viewYear, viewMonth + 1, 0);
+    const ics   = generateICS(appts, custs, startTime, from, to);
     const blob  = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
     const file  = new File([blob], 'KundeApp-aftaler.ics', { type: 'text/calendar' });
     try {

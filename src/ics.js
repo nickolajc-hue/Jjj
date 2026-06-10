@@ -65,8 +65,8 @@ function expandAppointments(appointments, from, to) {
 
 // Groups appointments by date and creates one timed block-event per day.
 // startTime: "HH:MM" — same value as shown in Min dag's Dagsplan.
-// Expands recurring appointments over 30 days back to 365 days forward.
-export function generateICS(appointments, customers = {}, startTime = '08:00') {
+// from/to: Date objects for the export window (defaults to current calendar month).
+export function generateICS(appointments, customers = {}, startTime = '08:00', from, to) {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -76,10 +76,8 @@ export function generateICS(appointments, customers = {}, startTime = '08:00') {
     VTIMEZONE_CPH,
   ];
 
-  const from = new Date();
-  from.setDate(from.getDate() - 30);
-  const to = new Date();
-  to.setFullYear(to.getFullYear() + 1);
+  if (!from) { from = new Date(); from.setDate(1); }
+  if (!to)   { to = new Date(from.getFullYear(), from.getMonth() + 1, 0); }
 
   const byDate = expandAppointments(appointments, from, to);
 
