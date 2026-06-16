@@ -15,6 +15,14 @@ import { createInvoice, sendInvoice, markInvoicePaid } from '../googleDrive.js';
 
 const MÅNEDER = ['Januar','Februar','Marts','April','Maj','Juni','Juli','August','September','Oktober','November','December'];
 const UGEDAGE = ['Ma','Ti','On','To','Fr','Lø','Sø'];
+
+function getISOWeek(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+  const jan4 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d - jan4) / 86400000 - 3 + (jan4.getDay() + 6) % 7) / 7);
+}
 const WH_PRESETS = [
   { label: '4t',  min: 240 },
   { label: '6t',  min: 360 },
@@ -368,7 +376,8 @@ export default function Kalender() {
       {/* Kalender-grid */}
       <div style={{ margin: '10px 10px 0', background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
         {/* Ugedage-header */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: '#F3F4F6', borderBottom: '1px solid #E5E7EB' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '26px repeat(7, 1fr)', background: '#F3F4F6', borderBottom: '1px solid #E5E7EB' }}>
+          <div style={{ textAlign: 'center', fontSize: 9, fontWeight: 700, color: '#9CA3AF', padding: '7px 0', borderRight: '1px solid #E5E7EB' }}>U</div>
           {UGEDAGE.map((d, i) => (
             <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: i === 6 ? '#EF4444' : '#6B7280', padding: '7px 0' }}>
               {d}
@@ -376,10 +385,20 @@ export default function Kalender() {
           ))}
         </div>
 
-        {/* Dage */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-          {cells.map((day, i) => {
-            const borderR = (i + 1) % 7 !== 0 ? '1px solid #F3F4F6' : 'none';
+        {/* Dage — grupperet i ugerækker med ugenummer til venstre */}
+        <div>
+          {Array.from({ length: cells.length / 7 }, (_, row) => {
+            const rowCells = cells.slice(row * 7, row * 7 + 7);
+            const firstDay = rowCells.find(d => d !== null);
+            const weekNum  = firstDay != null ? getISOWeek(new Date(viewYear, viewMonth, firstDay)) : null;
+            return (
+              <div key={row} style={{ display: 'grid', gridTemplateColumns: '26px repeat(7, 1fr)' }}>
+                {/* Ugenummer */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid #F3F4F6', background: '#FAFAFA' }}>
+                  {weekNum != null && <span style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF' }}>{weekNum}</span>}
+                </div>
+                {rowCells.map((day, i) => {
+            const borderR = i < 6 ? '1px solid #F3F4F6' : 'none';
             if (!day) return (
               <div key={`e${i}`} style={{ minHeight: 62, borderBottom: '1px solid #F3F4F6', borderRight: borderR, background: '#FAFAFA' }} />
             );
@@ -451,6 +470,9 @@ export default function Kalender() {
                     <div style={{ height: '100%', width: `${pct}%`, background: capColor(pct) }} />
                   </div>
                 )}
+              </div>
+            );
+                })}
               </div>
             );
           })}
