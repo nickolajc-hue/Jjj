@@ -135,7 +135,7 @@ function DagsPlan({ appointments, totalKm, startTime, onStartTimeChange, homeAdd
 
   const routeAddrs = [
     homeAddress,
-    ...appointments.map(a => a.customer?.address).filter(Boolean),
+    ...appointments.map(a => a.customer?.address || a.address).filter(Boolean),
     endAddress || homeAddress,
   ];
   const mapsUrl = routeAddrs.length >= 3
@@ -252,7 +252,7 @@ export default function MinDag() {
     const [homeCoords, endCoords, ...apptCoords] = await Promise.all([
       geocode(homeAddress),
       geocode(effectiveEnd),
-      ...dayAppts.map(a => geocode(a.customer?.address)),
+      ...dayAppts.map(a => geocode(a.customer?.address || a.address)),
     ]);
 
     const enriched = dayAppts.map((a, i) => ({ ...a, coords: apptCoords[i] }));
@@ -477,7 +477,7 @@ async function compressPhoto(file) {
 
 // ── Aftale-kort ────────────────────────────────────────────────────────────
 function AppCard({ appt, index, isFirst, isLast, date }) {
-  const addr = appt.customer?.address;
+  const addr = appt.customer?.address || appt.address;
   const mapsUrl = addr ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}` : null;
   const color = getApptColor(appt);
 

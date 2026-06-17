@@ -27,6 +27,7 @@ export default function AddEditAppointment() {
 
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
+  const [address, setAddress] = useState('');
   const [customerId, setCustomerId] = useState(prefillCustomerId); // null = ikke valgt, '' = ingen fast kunde
   const [customers, setCustomers] = useState([]);
   const [showPicker, setShowPicker] = useState(false);
@@ -110,6 +111,7 @@ export default function AddEditAppointment() {
       if (a) {
         setTitle(a.title || '');
         setNotes(a.notes || '');
+        setAddress(a.address || '');
         setCustomerId(a.customerId ?? '');
         setColor(a.color || 'blue');
         setDuration(String(a.duration || 60));
@@ -138,6 +140,7 @@ export default function AddEditAppointment() {
     const payload = {
       title,
       notes,
+      address: customerId === '' ? address.trim() : '',
       customerId,
       color,
       date: dateObj.toISOString(),
@@ -243,6 +246,18 @@ export default function AddEditAppointment() {
           </span>
           <span style={{ color: '#9CA3AF', fontSize: 18 }}>▾</span>
         </div>
+
+        {/* Adresse – kun ved ingen fast kunde */}
+        {customerId === '' && (
+          <>
+            <label style={lbl}>Adresse</label>
+            <div style={fld}>
+              <span style={{ fontSize: 18 }}>📍</span>
+              <input style={{ flex: 1, fontSize: 16 }} value={address} onChange={e => setAddress(e.target.value)}
+                placeholder="Vejnavn, postnr, by" />
+            </div>
+          </>
+        )}
 
         {/* Dato */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
