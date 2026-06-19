@@ -210,6 +210,24 @@ export default function Kalender() {
     }
   };
 
+  const handleFakturaOgBetalt = async (appt, cust, e) => {
+    e.stopPropagation();
+    setInvoicingId(appt.id);
+    setInvoicingMode('paid');
+    try {
+      const result = await createInvoice({ appointment: appt, customer: cust, sendEmail: false });
+      await markInvoicePaid(result.nr);
+      const today = new Date();
+      const paidDate = `${today.getDate()}/${today.getMonth() + 1}-${today.getFullYear()}`;
+      saveInvResult(`${appt.id}_${selStr}`, { ...result, paid: true, paidDate });
+    } catch (err) {
+      alert(`Fejl: ${err.message}`);
+    } finally {
+      setInvoicingId(null);
+      setInvoicingMode(null);
+    }
+  };
+
   const handleSendEmail = async (appt, cust, e) => {
     e.stopPropagation();
     const res = invoiceResults[`${appt.id}_${selStr}`];
@@ -744,7 +762,7 @@ export default function Kalender() {
                             }
                           </div>
                         ) : (
-                          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                             <button
                               onClick={e => handleFaktura(a, cust, false, e)}
                               disabled={!!invoicingId}
@@ -759,6 +777,13 @@ export default function Kalender() {
                               style={{ flex: 1, background: cust?.email ? '#059669' : '#E5E7EB', color: cust?.email ? '#fff' : '#9CA3AF', borderRadius: 8, padding: '7px 0', fontSize: 12, fontWeight: 700, opacity: invoicingId === a.id && invoicingMode === 'send' ? 0.5 : 1 }}
                             >
                               {invoicingId === a.id && invoicingMode === 'send' ? '⏳ Sender...' : '📧 Opret og send'}
+                            </button>
+                            <button
+                              onClick={e => handleFakturaOgBetalt(a, cust, e)}
+                              disabled={!!invoicingId}
+                              style={{ flexBasis: '100%', background: '#FEF3C7', color: '#D97706', borderRadius: 8, padding: '7px 0', fontSize: 12, fontWeight: 700, border: '1.5px solid #FDE68A', opacity: invoicingId === a.id && invoicingMode === 'paid' ? 0.5 : 1 }}
+                            >
+                              {invoicingId === a.id && invoicingMode === 'paid' ? '⏳ Opretter...' : '💰 Opret som allerede betalt'}
                             </button>
                           </div>
                         )}
