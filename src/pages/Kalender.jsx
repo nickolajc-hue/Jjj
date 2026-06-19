@@ -738,7 +738,20 @@ export default function Kalender() {
                                 style={{ color: '#6B7280', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>×</button>
                             </div>
                             {invoiceResults[`${a.id}_${selStr}`].paid
-                              ? <div style={{ color: '#065F46', marginTop: 4, fontWeight: 700 }}>✅ Betalt {invoiceResults[`${a.id}_${selStr}`].paidDate}</div>
+                              ? (
+                                <div style={{ marginTop: 4 }}>
+                                  <div style={{ color: '#065F46', fontWeight: 700, marginBottom: cust?.email ? 6 : 0 }}>✅ Betalt {invoiceResults[`${a.id}_${selStr}`].paidDate}</div>
+                                  {cust?.email && (
+                                    <button
+                                      onClick={e => handleSendEmail(a, cust, e)}
+                                      disabled={sendingId === a.id}
+                                      style={{ width: '100%', background: invoiceResults[`${a.id}_${selStr}`].emailSent ? '#F0FDF4' : '#059669', color: invoiceResults[`${a.id}_${selStr}`].emailSent ? '#059669' : '#fff', borderRadius: 6, padding: '5px 0', fontSize: 12, fontWeight: 700, opacity: sendingId === a.id ? 0.6 : 1, border: invoiceResults[`${a.id}_${selStr}`].emailSent ? '1px solid #6EE7B7' : 'none' }}
+                                    >
+                                      {sendingId === a.id ? '⏳...' : invoiceResults[`${a.id}_${selStr}`].emailSent ? '📧 Gensend faktura' : '📧 Send faktura'}
+                                    </button>
+                                  )}
+                                </div>
+                              )
                               : (
                                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                                   {cust?.email && (
