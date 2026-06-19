@@ -215,8 +215,8 @@ export default function Kalender() {
     setInvoicingId(appt.id);
     setInvoicingMode('paid');
     try {
-      const result = await createInvoice({ appointment: appt, customer: cust, sendEmail: false });
-      await markInvoicePaid(result.nr);
+      const result = await createInvoice({ appointment: appt, customer: cust, sendEmail: false, paid: true });
+      await markInvoicePaid(result.nr, result.docUrl);
       const today = new Date();
       const paidDate = `${today.getDate()}/${today.getMonth() + 1}-${today.getFullYear()}`;
       saveInvResult(`${appt.id}_${selStr}`, { ...result, paid: true, paidDate });
@@ -249,7 +249,7 @@ export default function Kalender() {
     if (!res) return;
     setMarkingPaidId(appt.id);
     try {
-      await markInvoicePaid(res.nr);
+      await markInvoicePaid(res.nr, res.docUrl);
       const today = new Date();
       const paidDate = `${today.getDate()}/${today.getMonth() + 1}-${today.getFullYear()}`;
       saveInvResult(`${appt.id}_${selStr}`, { ...res, paid: true, paidDate });

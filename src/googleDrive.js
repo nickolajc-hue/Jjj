@@ -204,9 +204,10 @@ async function sendInvoiceEmail({ to, custName, nr, service, amount, due, docUrl
 }
 
 // ── Build formatted Google Doc ─────────────────────────────────────────────
-async function buildDoc(folderId, { nr, date, due, amount, service, lines, custName, custAddr, custPhone }) {
-  const GRAY = { red: 0.55, green: 0.55, blue: 0.55 };
-  const BLUE = { red: 0.15, green: 0.37, blue: 0.92 };
+async function buildDoc(folderId, { nr, date, due, amount, service, lines, custName, custAddr, custPhone, paid = false }) {
+  const GRAY  = { red: 0.55, green: 0.55, blue: 0.55 };
+  const BLUE  = { red: 0.15, green: 0.37, blue: 0.92 };
+  const GREEN = { red: 0.02, green: 0.55, blue: 0.33 };
   const LINE = '─'.repeat(54);
 
   // pad(label, value) — left label, right-padded value in 54 chars
@@ -259,11 +260,16 @@ async function buildDoc(folderId, { nr, date, due, amount, service, lines, custN
   seg(`${pad('TOTAL DKK:', fmtKr(total))}\n`,                          { bold: true, size: 13 });
   seg(`${LINE}\n`,                                                      { color: GRAY });
   seg('\n');
-  seg(`Betalingsbetingelser: Netto ${FIRMA.betalingsfrist} dage — Forfaldsdato: ${fmtDate(due)}\n`, { bold: true, size: 10 });
-  seg('\n');
-  seg(`Beløbet indbetales på bankkonto:\n`,                             { size: 10 });
-  seg(`Reg.nr. ${FIRMA.bankReg}  /  Kontonr. ${FIRMA.bankKonto}\n`,    { size: 10 });
-  seg(`Faktura nr. ${nr} bedes angivet ved bankoverførsel\n`,           { size: 10 });
+  if (paid) {
+    seg(`✓ BETALT\n`,                                                   { bold: true, size: 20, color: GREEN, center: true });
+    seg('\n');
+  } else {
+    seg(`Betalingsbetingelser: Netto ${FIRMA.betalingsfrist} dage — Forfaldsdato: ${fmtDate(due)}\n`, { bold: true, size: 10 });
+    seg('\n');
+    seg(`Beløbet indbetales på bankkonto:\n`,                           { size: 10 });
+    seg(`Reg.nr. ${FIRMA.bankReg}  /  Kontonr. ${FIRMA.bankKonto}\n`,  { size: 10 });
+    seg(`Faktura nr. ${nr} bedes angivet ved bankoverførsel\n`,         { size: 10 });
+  }
   seg('\n');
   seg(`${FIRMA.navn}  ·  ${FIRMA.adresse}  ·  CVR: ${FIRMA.cvr}  ·  ${FIRMA.email}\n`,
     { size: 9, color: GRAY, center: true });
@@ -497,7 +503,7 @@ export async function fetchRegnskab() {
 }
 
 // ── Mark an invoice as paid in the sheet ─────────────────────────────────
-export async function markInvoicePaid(nr) {
+export async function markInvoicePaid(nr, docUrl) {
   const { id: sheetId, tab: sheetTab } = await getSheet();
   const tab = encodeURIComponent(sheetTab);
   const res = await api(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!I3:I200`);
@@ -509,6 +515,7 @@ export async function markInvoicePaid(nr) {
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${tab}!J${writeRow}?valueInputOption=USER_ENTERED`,
     { method: 'PUT', body: JSON.stringify({ values: [[sheetsDate(new Date())]] }) }
   );
+  if (docUrl) await addPaidStampToDoc(docUrl).catch(() => {});
 }
 
 // ── Fetch all invoices from the Bilag sheet ───────────────────────────────
@@ -610,7 +617,33 @@ export async function sendInvoice({ customer, appointment, nr, docUrl }) {
 }
 
 // ── Main: create invoice ───────────────────────────────────────────────────
-export async function createInvoice({ appointment, customer, sendEmail = true }) {
+async function addPaidStampToDoc(docUrl) {
+  const docId = docUrl?.match(/\/d\/([a-zA-Z0-9_-]+)/)?.[1];
+  if (!docId) return;
+  const GREEN = { red: 0.02, green: 0.55, blue: 0.33 };
+  const stamp = '✓ BETALT\n';
+  // Insert at beginning of doc body (index 1), then style it
+  await api(`https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`, {
+    method: 'POST',
+    body: JSON.stringify({
+      requests: [
+        { insertText: { location: { index: 1 }, text: stamp } },
+        { updateTextStyle: {
+            range: { startIndex: 1, endIndex: stamp.length },
+            textStyle: { bold: true, fontSize: { magnitude: 20, unit: 'PT' }, foregroundColor: { color: { rgbColor: GREEN } } },
+            fields: 'bold,fontSize,foregroundColor',
+        }},
+        { updateParagraphStyle: {
+            range: { startIndex: 1, endIndex: stamp.length },
+            paragraphStyle: { alignment: 'CENTER' },
+            fields: 'alignment',
+        }},
+      ],
+    }),
+  });
+}
+
+export async function createInvoice({ appointment, customer, sendEmail = true, paid = false }) {
   const folderId = await getFolder();
   const { id: sheetId, tab: sheetTab, tabId } = await getSheet();
 
@@ -624,7 +657,7 @@ export async function createInvoice({ appointment, customer, sendEmail = true })
   const custPhone = customer?.phone   || '';
 
   // ── Formatted Google Doc ───────────────────────────────────────────────
-  const { docUrl, docId } = await buildDoc(folderId, { nr, date, due, amount, service, custName, custAddr, custPhone });
+  const { docUrl, docId } = await buildDoc(folderId, { nr, date, due, amount, service, custName, custAddr, custPhone, paid });
 
   await shareDoc(docId);
 
