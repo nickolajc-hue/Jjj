@@ -134,12 +134,12 @@ function DagsPlan({ appointments, totalKm, startTime, onStartTimeChange, homeAdd
   const endTime = addMinutes(startTime, totalMin);
 
   const routeAddrs = [
-    homeAddress,
     ...appointments.map(a => a.customer?.address || a.address).filter(Boolean),
     endAddress || homeAddress,
   ];
-  const mapsUrl = routeAddrs.length >= 3
-    ? `https://www.google.com/maps/dir/${routeAddrs.map(a => encodeURIComponent(a)).join('/')}`
+  // Empty first segment = Google Maps uses current location as origin
+  const mapsUrl = routeAddrs.length >= 2
+    ? `https://www.google.com/maps/dir//${routeAddrs.map(a => encodeURIComponent(a)).join('/')}`
     : null;
 
   return (
@@ -426,7 +426,10 @@ export default function MinDag() {
             <DagsPlan appointments={appointments} totalKm={totalKm} startTime={startTime} onStartTimeChange={saveStartTime} homeAddress={homeAddress} endAddress={endAddress} />
             <PackingList appointments={appointments} date={selectedDate} />
             {appointments.map((a, i) => (
-              <AppCard key={a.id} appt={a} index={i} isFirst={i === 0} isLast={i === appointments.length - 1 && homeReturnKm === 0} date={selectedDate} />
+              <AppCard key={a.id} appt={a} index={i} total={appointments.length} isFirst={i === 0} isLast={i === appointments.length - 1 && homeReturnKm === 0} date={selectedDate}
+                onMoveUp={i > 0 ? () => setAppointments(prev => { const n = [...prev]; [n[i-1], n[i]] = [n[i], n[i-1]]; return n; }) : null}
+                onMoveDown={i < appointments.length - 1 ? () => setAppointments(prev => { const n = [...prev]; [n[i], n[i+1]] = [n[i+1], n[i]]; return n; }) : null}
+              />
             ))}
             {homeReturnKm > 0 && (
               <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
@@ -476,7 +479,7 @@ async function compressPhoto(file) {
 }
 
 // ── Aftale-kort ────────────────────────────────────────────────────────────
-function AppCard({ appt, index, isFirst, isLast, date }) {
+function AppCard({ appt, index, total, isFirst, isLast, date, onMoveUp, onMoveDown }) {
   const addr = appt.customer?.address || appt.address;
   const mapsUrl = addr ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}` : null;
   const color = getApptColor(appt);
@@ -666,6 +669,22 @@ function AppCard({ appt, index, isFirst, isLast, date }) {
           }}>
             {completed ? '✓ Gennemført' : '○ Marker færdig'}
           </button>
+          {total > 1 && (onMoveUp || onMoveDown) && (
+            <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+              <button onClick={onMoveUp} disabled={!onMoveUp} style={{
+                width: 34, height: 34, borderRadius: 8, fontSize: 16,
+                background: onMoveUp ? '#F3F4F6' : 'transparent',
+                color: onMoveUp ? '#374151' : '#D1D5DB',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>↑</button>
+              <button onClick={onMoveDown} disabled={!onMoveDown} style={{
+                width: 34, height: 34, borderRadius: 8, fontSize: 16,
+                background: onMoveDown ? '#F3F4F6' : 'transparent',
+                color: onMoveDown ? '#374151' : '#D1D5DB',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>↓</button>
+            </div>
+          )}
         </div>
       </div>
 
