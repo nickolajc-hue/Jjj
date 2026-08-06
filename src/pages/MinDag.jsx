@@ -72,6 +72,25 @@ function addMinutes(timeStr, minutes) {
   return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
+// ── Beregn estimerede starttider baseret på faktisk afslutning ────────────
+function computeDisplayStarts(appointments, startTime, completionTimes) {
+  const starts = [];
+  let t = startTime;
+  for (let i = 0; i < appointments.length; i++) {
+    starts.push(t);
+    const nextDist = i + 1 < appointments.length ? (appointments[i + 1].distFromPrev || 0) : 0;
+    const travelMin = Math.round(nextDist * 2);
+    if (completionTimes[i]) {
+      const d = new Date(completionTimes[i]);
+      const ctStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      t = addMinutes(ctStr, travelMin);
+    } else {
+      t = addMinutes(t, (appointments[i].duration || 0) + travelMin);
+    }
+  }
+  return starts;
+}
+
 // ── Pakkeliste ─────────────────────────────────────────────────────────────
 function PackingList({ appointments, date }) {
   const allEquipment = [...new Set(appointments.flatMap(a => a.equipment || []))].sort();
@@ -216,6 +235,7 @@ export default function MinDag() {
   const [loading, setLoading] = useState(true);
   const [totalKm, setTotalKm] = useState(0);
   const [homeReturnKm, setHomeReturnKm] = useState(0);
+  const [completionTimes, setCompletionTimes] = useState([]);
 
   const nowDay = new Date(); nowDay.setHours(0, 0, 0, 0);
   const isToday = selectedDate.getTime() === nowDay.getTime();
@@ -279,6 +299,15 @@ export default function MinDag() {
   }, [homeAddress, endAddress, selectedDate]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const records = getDayRecords();
+    setCompletionTimes(
+      appointments.map(a => records[getDayKey(a.id, selectedDate)]?.completedAt || null)
+    );
+  }, [appointments, selectedDate]);
+
+  const displayStarts = computeDisplayStarts(appointments, startTime, completionTimes);
 
   const saveHome = () => {
     localStorage.setItem(HOME_KEY, tempHome.trim());
@@ -427,6 +456,8 @@ export default function MinDag() {
             <PackingList appointments={appointments} date={selectedDate} />
             {appointments.map((a, i) => (
               <AppCard key={a.id} appt={a} index={i} total={appointments.length} isFirst={i === 0} isLast={i === appointments.length - 1 && homeReturnKm === 0} date={selectedDate}
+                scheduledStart={displayStarts[i]}
+                onCompletionChange={(ct) => setCompletionTimes(prev => { const n = [...prev]; n[i] = ct; return n; })}
                 onMoveUp={i > 0 ? () => setAppointments(prev => { const n = [...prev]; [n[i-1], n[i]] = [n[i], n[i-1]]; return n; }) : null}
                 onMoveDown={i < appointments.length - 1 ? () => setAppointments(prev => { const n = [...prev]; [n[i], n[i+1]] = [n[i+1], n[i]]; return n; }) : null}
               />
@@ -479,7 +510,7 @@ async function compressPhoto(file) {
 }
 
 // ── Aftale-kort ────────────────────────────────────────────────────────────
-function AppCard({ appt, index, total, isFirst, isLast, date, onMoveUp, onMoveDown }) {
+function AppCard({ appt, index, total, isFirst, isLast, date, scheduledStart, onCompletionChange, onMoveUp, onMoveDown }) {
   const addr = appt.customer?.address || appt.address;
   const mapsUrl = addr ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}` : null;
   const color = getApptColor(appt);
@@ -501,7 +532,9 @@ function AppCard({ appt, index, total, isFirst, isLast, date, onMoveUp, onMoveDo
   const toggleComplete = () => {
     const v = !completed;
     setCompleted(v);
-    saveDayRecords({ ...getDayRecords(), [dayKey]: { ...getDayRecords()[dayKey], completed: v } });
+    const ct = v ? new Date().toISOString() : null;
+    saveDayRecords({ ...getDayRecords(), [dayKey]: { ...getDayRecords()[dayKey], completed: v, completedAt: ct } });
+    onCompletionChange?.(ct);
   };
 
   const startTimer = () => {
@@ -566,12 +599,21 @@ function AppCard({ appt, index, total, isFirst, isLast, date, onMoveUp, onMoveDo
         boxShadow: '0 1px 6px rgba(0,0,0,0.06)', opacity: completed ? 0.85 : 1,
         borderLeft: `3px solid ${completed ? '#10B981' : color}`,
       }}>
-        {appt.distFromPrev != null && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#F0FDF4', borderRadius: 8, padding: '3px 10px', marginBottom: 10 }}>
-            <span style={{ fontSize: 12 }}>🚗</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#10B981' }}>
-              {isFirst ? 'Fra bopæl: ' : 'Fra forrige: '}~{appt.distFromPrev.toFixed(1)} km
-            </span>
+        {(appt.distFromPrev != null || scheduledStart) && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            {appt.distFromPrev != null ? (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#F0FDF4', borderRadius: 8, padding: '3px 10px' }}>
+                <span style={{ fontSize: 12 }}>🚗</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#10B981' }}>
+                  {isFirst ? 'Fra bopæl: ' : 'Fra forrige: '}~{appt.distFromPrev.toFixed(1)} km
+                </span>
+              </div>
+            ) : <div />}
+            {scheduledStart && (
+              <div style={{ fontSize: 13, fontWeight: 800, color: completed ? '#9CA3AF' : '#2563EB', background: '#EFF6FF', borderRadius: 8, padding: '3px 10px' }}>
+                🕐 {scheduledStart}
+              </div>
+            )}
           </div>
         )}
 
